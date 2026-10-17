@@ -1,0 +1,29 @@
+{
+  "name": "tiggo-5x-painel",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Simulador educacional e não oficial do painel e dos assistentes de condução de um SUV compacto, para estudo do manual do proprietário.",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "test": "vitest run",
+    "check:legal": "node scripts/check-copyright-safety.mjs",
+    "verify": "npm run check:legal && npm run test && npm run build"
+  },
+  "dependencies": {
+    "@fontsource-variable/bricolage-grotesque": "^5.3.0",
+    "@fontsource/barlow-condensed": "^5.3.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@types/react": "^18.3.31",
+    "@types/react-dom": "^18.3.7",
+    "@vitejs/plugin-react": "^4.7.0",
+    "typescript": "^5.9.3",
+    "vite": "^5.4.21",
+    "vitest": "^2.1.9"
+  }
+}

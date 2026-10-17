@@ -1,0 +1,13 @@
+node_modules
+dist
+.DS_Store
+*.log
+
+# Proteção de direitos autorais: nunca versionar o manual nem material derivado dele.
+*.pdf
+manual*/
+**/manual-*.png
+**/manual-*.jpg
+**/manual-*.jpeg
+**/manual-*.txt
+public/manual*

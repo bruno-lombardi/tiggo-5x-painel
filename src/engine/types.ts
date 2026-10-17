@@ -1,0 +1,100 @@
+export type Gear = "P" | "R" | "N" | "D";
+export type TargetKind = "none" | "staticVehicle" | "movingVehicle" | "pedestrian";
+export type Level = "off" | "standby" | "active";
+export type Side = "left" | "right";
+export type FcwSensitivity = "low" | "standard" | "high";
+export type AebStage = "idle" | "warn" | "partial" | "emergency";
+export type FaultKey = "acc" | "aeb" | "ldw" | "bsd" | "ihc";
+export type AccMode = "off" | "standby" | "active" | "suspended";
+export type TurnSignal = "none" | Side;
+
+export interface Settings {
+  /** Monitor de ponto cego (e alerta de tráfego cruzado traseiro) */
+  bsd: boolean;
+  /** Alerta de distância frontal */
+  fdm: boolean;
+  /** Frenagem automática de emergência + alerta de colisão frontal */
+  aeb: boolean;
+  fcwSensitivity: FcwSensitivity;
+  /** Farol alto inteligente */
+  ihc: boolean;
+  /** Câmera 360° abre sozinha ao ligar a seta */
+  avmOnSignal: boolean;
+  /** Câmera 360° abre sozinha ao girar o volante em manobra */
+  avmOnSteer: boolean;
+}
+
+export interface Target {
+  kind: TargetKind;
+  /** metros até o alvo */
+  distance: number;
+  /** km/h do alvo (só vale para veículo em movimento) */
+  speed: number;
+}
+
+export interface SimState {
+  hasMaxDrive: boolean;
+  ignitionOn: boolean;
+  speed: number;
+  gear: Gear;
+  esp: boolean;
+  seatbelt: boolean;
+  doorClosed: boolean;
+  parkingBrake: boolean;
+  hdc: boolean;
+  /** pedais: freio e acelerador (0 solto, 1 normal, 2 a fundo) */
+  brake: boolean;
+  accel: 0 | 1 | 2;
+  absActive: boolean;
+  evasiveSteer: boolean;
+  turnSignal: TurnSignal;
+  hazard: boolean;
+  lightAuto: boolean;
+  ihcRequested: boolean;
+  ihcActive: boolean;
+  roadLit: boolean;
+  oncoming: boolean;
+  settings: Settings;
+  faults: Record<FaultKey, boolean>;
+
+  acc: { mode: AccMode; setSpeed: number; gap: 1 | 2 | 3; arm: number };
+  limit: { mode: Level; value: number };
+  ldw: Level;
+  laneDeparture: boolean;
+  bsd: Level;
+  blind: Record<Side, boolean>;
+  cross: Record<Side, boolean>;
+  avmManual: boolean;
+  avmOn: boolean;
+  target: Target;
+  aeb: AebStage;
+  aebStopped: boolean;
+  collided: boolean;
+  /** relógio de simulação, para animações no painel */
+  clock: number;
+}
+
+export type Action =
+  | { type: "tick"; dt: number }
+  | { type: "set"; key: keyof SimState; value: unknown }
+  | { type: "setting"; key: keyof Settings; value: unknown }
+  | { type: "fault"; key: FaultKey; value: boolean }
+  | { type: "ignition" }
+  | { type: "gear"; gear: Gear }
+  | { type: "brake"; down: boolean }
+  | { type: "accel"; level: 0 | 1 | 2 }
+  | { type: "accPower" }
+  | { type: "setButton"; long: boolean }
+  | { type: "resButton"; long: boolean }
+  | { type: "accSetFromStop" }
+  | { type: "accCancel" }
+  | { type: "accGap" }
+  | { type: "limitToggle" }
+  | { type: "ihcPush" }
+  | { type: "ihcPull" }
+  | { type: "turn"; side: TurnSignal }
+  | { type: "avmButton" }
+  | { type: "target"; target: Partial<Target> }
+  | { type: "resetTarget" }
+  | { type: "variant"; hasMaxDrive: boolean }
+  | { type: "reset" };
