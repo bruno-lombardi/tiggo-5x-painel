@@ -1881,3 +1881,8 @@ kbd {
 .drive-bar {
   display: none;
 }
+
+.volume {
+  width: 84px;
+  accent-color: var(--accent, #0c6a80);
+}

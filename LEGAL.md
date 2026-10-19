@@ -40,3 +40,5 @@ Este é um projeto **educacional, independente e não oficial**. Não tem víncu
 O simulador **não substitui o manual do seu veículo** nem treinamento de direção. Os assistentes de condução reais têm limitações que dependem de versão, calibração e condições da via. Se algo aqui divergir do manual do seu carro, vale o manual. Se você é titular de direitos e quer algo removido, abra uma issue ou entre em contato com a pessoa responsável pelo repositório.
 
 Esta nota não é aconselhamento jurídico. Quem pretende publicar o projeto de forma ampla ou comercial deve consultar um advogado e, de preferência, pedir autorização ao fabricante.
+
+- Sons: todos sintetizados por código com a Web Audio API; nenhum áudio gravado, de terceiros ou do carro real. Timbres e ritmos são ilustrativos.

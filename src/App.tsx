@@ -10,7 +10,7 @@ import { SCENARIOS } from "./content/scenarios";
 import { createDirector, directorStep } from "./engine/director";
 import type { DirState } from "./engine/director";
 import { createInitialState, evaluate, reduce } from "./engine/engine";
-import { createBeeper } from "./input/audio";
+import { createSoundscape } from "./input/soundscape";
 import { useController } from "./input/useController";
 import { useMission } from "./useMission";
 import { useStats } from "./useStats";
@@ -69,22 +69,47 @@ export function App() {
   }, [freeRoad]);
 
   /* Som dos alertas */
-  const beeper = useRef<ReturnType<typeof createBeeper> | null>(null);
+  const beeper = useRef<ReturnType<typeof createSoundscape> | null>(null);
   useEffect(() => {
-    beeper.current = createBeeper();
+    beeper.current = createSoundscape();
     const id = window.setInterval(() => beeper.current?.update(stateRef.current, derivedRef.current), 100);
     return () => {
       window.clearInterval(id);
       beeper.current?.dispose();
     };
   }, []);
+  const userMuted = useRef(false);
   const toggleSound = () => {
     const next = !sound;
+    userMuted.current = !next;
     beeper.current?.setEnabled(next);
     setSound(next);
   };
+  const [volume, setVolume] = useState(0.8);
+  const changeVolume = (v: number) => {
+    setVolume(v);
+    beeper.current?.setVolume(v);
+  };
+
+  /* Sons da interface: passo concluído e resposta do quiz */
+  const lastProg = useRef(0);
+  useEffect(() => {
+    const sc = mission.scenario;
+    if (sc && mission.progress > lastProg.current) {
+      beeper.current?.ui(mission.progress >= sc.steps.length ? "ok" : "step");
+    }
+    lastProg.current = sc ? mission.progress : 0;
+  }, [mission.scenario, mission.progress]);
+  useEffect(() => {
+    const sc = mission.scenario;
+    if (sc && mission.picked !== null) beeper.current?.ui(mission.picked === sc.quiz.answer ? "ok" : "fail");
+  }, [mission.picked, mission.scenario]);
 
   const begin = useCallback(() => {
+    if (!userMuted.current && !beeper.current?.isEnabled()) {
+      beeper.current?.setEnabled(true);
+      setSound(true);
+    }
     dispatch({ type: "reset" });
     dispatch({ type: "ignition" });
     dispatch({ type: "gear", gear: "D" });
@@ -128,6 +153,18 @@ export function App() {
               <button type="button" className="chip" aria-pressed={sound} onClick={toggleSound}>
                 Som: {sound ? "ligado" : "desligado"}
               </button>
+              {sound ? (
+                <input
+                  type="range"
+                  className="volume"
+                  min={0}
+                  max={1}
+                  step={0.05}
+                  value={volume}
+                  aria-label="Volume"
+                  onChange={(e) => changeVolume(Number(e.target.value))}
+                />
+              ) : null}
             </>
           ) : null}
           <div className="seg" role="group" aria-label="Modo">

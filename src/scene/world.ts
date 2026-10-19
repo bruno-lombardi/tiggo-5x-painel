@@ -6,6 +6,7 @@ import { RenderPass } from "three/addons/postprocessing/RenderPass.js";
 import { UnrealBloomPass } from "three/addons/postprocessing/UnrealBloomPass.js";
 import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 import { createEnvironment } from "./environment";
+import { TRAFFIC_AT, TRAFFIC_REL_SPEED } from "../input/soundscape";
 import { makeCar, makeTruck, makeWalker } from "./models";
 import type { CarParts } from "./models";
 
@@ -193,6 +194,16 @@ export function createWorld(host: HTMLElement, labelLayer: HTMLElement): World {
     shadowize(c.group);
     scene.add(c.group);
   }
+
+  /* Tráfego decorativo no sentido oposto (sincronizado com o som) */
+  const deco = [makeCar(0x8a8f94), makeCar(0x2d4f7a), makeCar(0xb0b4b8), makeCar(0x6a2d2d), makeTruck()];
+  for (const c of deco) {
+    c.group.rotation.y = Math.PI;
+    c.group.visible = false;
+    shadowize(c.group);
+    scene.add(c.group);
+  }
+  let cum = 0;
 
   /* Farol: luz de verdade e leque visual */
   const spot = new THREE.SpotLight(0xfff2d0, 0, 90, 0.5, 0.6, 1.2);
@@ -478,6 +489,20 @@ export function createWorld(host: HTMLElement, labelLayer: HTMLElement): World {
     setCar(oncomingCar, { head: 2, tail: 0 });
     for (const w of oncomingCar.wheels) w.rotation.x = clock * 10;
 
+    /* Tráfego decorativo */
+    cum += (mps * dir + TRAFFIC_REL_SPEED) * (still ? 0 : dt);
+    deco.forEach((c) => (c.group.visible = false));
+    for (let k = 0; k < TRAFFIC_AT.length; k++) {
+      const z = cum - TRAFFIC_AT[k];
+      if (z < -320) break;
+      if (z > 40) continue;
+      const c = deco[k % deco.length];
+      c.group.visible = true;
+      c.group.position.set(-13.3, 0, z);
+      for (const w of c.wheels) w.rotation.x = clock * 12;
+      setCar(c, { head: nightK > 0.4 ? 1.8 : 0.3, tail: 0 });
+    }
+
     /* Zonas de sensor */
     sensorGroup.visible = inp.sensors;
     if (inp.sensors) {
@@ -587,7 +612,15 @@ export function createWorld(host: HTMLElement, labelLayer: HTMLElement): World {
     const k = 1 - Math.exp(-dt * (still ? 30 : 3.5));
     camPos.lerp(wantPos, k);
     camLook.lerp(wantLook, k);
+    const spK = Math.min(1, s.speed / 150);
+    const fovWant = mode === "top" || mode === "avm" ? 46 : 46 + 9 * spK;
+    camera.fov += (fovWant - camera.fov) * k;
+    camera.updateProjectionMatrix();
     camera.position.copy(camPos);
+    if (!still && mode === "chase" && s.speed > 5) {
+      camera.position.y += Math.sin(clock * 31) * 0.012 * spK + Math.sin(clock * 11.3) * 0.01 * spK;
+      camera.position.x += Math.sin(clock * 23) * 0.008 * spK;
+    }
     camera.lookAt(camLook);
     camera.updateMatrixWorld();
 
