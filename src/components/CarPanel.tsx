@@ -50,6 +50,8 @@ export function CarPanel({ state: s, dispatch, select }: Props) {
         />
       </div>
 
+      <Switch label="Cena noturna" checked={s.night} onChange={(v) => set("night", v)} onFocusId={() => select("ihc")} />
+
       <Slider label="Velocidade" value={s.speed} min={0} max={200} unit="km/h" onChange={(v) => set("speed", v)} />
 
       <Segmented
@@ -80,7 +82,7 @@ export function CarPanel({ state: s, dispatch, select }: Props) {
         </button>
       </Group>
 
-      <Group title="Ao redor do carro">
+      <Group title="Ao redor do carro" open>
         <Switch label="Carro no ponto cego esquerdo" checked={s.blind.left} onChange={(v) => set("blind", { ...s.blind, left: v })} onFocusId={() => select("bsd")} />
         <Switch label="Carro no ponto cego direito" checked={s.blind.right} onChange={(v) => set("blind", { ...s.blind, right: v })} onFocusId={() => select("bsd")} />
         <Switch label="Carro cruzando atrás, à esquerda" checked={s.cross.left} onChange={(v) => set("cross", { ...s.cross, left: v })} onFocusId={() => select("rcta")} />

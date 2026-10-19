@@ -8,8 +8,13 @@ interface Props {
   select: (id: string) => void;
 }
 
+interface WheelProps extends Props {
+  page: "adas" | "trip";
+  setPage: (p: "adas" | "trip") => void;
+}
+
 /** Volante: botões do ACC e do limitador. A posição dos botões é ilustrativa. */
-export function WheelPanel({ state: s, dispatch, select }: Props) {
+export function WheelPanel({ state: s, dispatch, select, page, setPage }: WheelProps) {
   return (
     <section className="panel wheel" aria-labelledby="wheel-h">
       <h2 id="wheel-h">Volante</h2>
@@ -60,6 +65,24 @@ export function WheelPanel({ state: s, dispatch, select }: Props) {
             Distância
           </PressButton>
         </div>
+      </div>
+      <div className="row nav-pad" role="group" aria-label="Navegação da tela do painel">
+        <PressButton className="chip" ariaLabel="Página anterior do painel" onShort={() => setPage(page === "adas" ? "trip" : "adas")}>
+          ◄
+        </PressButton>
+        <PressButton
+          className="chip"
+          ariaLabel="OK: segure para zerar a viagem"
+          title="Na página Viagem, segure para zerar"
+          onShort={() => undefined}
+          onLong={() => page === "trip" && dispatch({ type: "tripReset" })}
+        >
+          OK
+        </PressButton>
+        <PressButton className="chip" ariaLabel="Próxima página do painel" onShort={() => setPage(page === "adas" ? "trip" : "adas")}>
+          ►
+        </PressButton>
+        <span className="nav-label">Tela: {page === "adas" ? "Assistência" : "Viagem"}</span>
       </div>
       <p className="note">
         Toque curto muda 1 km/h. Segure RES+ ou SET– para mudar de 5 em 5 (de 10 em 10 acima de 80 km/h). Disposição ilustrativa.

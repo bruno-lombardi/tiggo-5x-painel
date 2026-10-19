@@ -93,6 +93,9 @@ export function createInitialState(hasMaxDrive = true): SimState {
     aebStopped: false,
     collided: false,
     clock: 0,
+    night: false,
+    odo: 6673,
+    trip: { km: 0, seconds: 0, liters: 0 },
   };
 }
 
@@ -226,6 +229,26 @@ export interface Derived {
   fdmWarn: boolean;
   gapMeters: number;
   messages: MessageId[];
+  /** valores ILUSTRATIVOS para o painel */
+  rpm: number;
+  fuelLevel: number;
+  rangeKm: number;
+  tripAvgSpeed: number;
+  tripKmPerLiter: number;
+}
+
+const TANK_LITERS = 48;
+const START_FUEL = 0.62;
+
+/** Rotação aproximada. ILUSTRATIVA: o manual não informa a relação de marchas do CVT. */
+export function estimateRpm(s: SimState): number {
+  if (!s.ignitionOn) return 0;
+  const base = 800;
+  const load = s.accel === 2 ? 1.5 : s.accel === 1 ? 1.15 : 1;
+  const driveable = s.gear === "D" || s.gear === "R";
+  const fromSpeed = driveable ? s.speed * 22 * load : 0;
+  const rev = s.accel > 0 && !driveable ? 2200 : 0;
+  return Math.min(7200, base + fromSpeed + rev);
 }
 
 export function evaluate(s: SimState): Derived {
@@ -293,7 +316,16 @@ export function evaluate(s: SimState): Derived {
     messages.push("accTargetLost");
   if (s.limit.mode === "active" && s.accel === 2 && s.speed > s.limit.value) messages.push("limitOverride");
 
+  const fuelLevel = clamp(START_FUEL - s.trip.liters / TANK_LITERS, 0, 1);
+  const kmPerLiter = s.trip.liters > 0.01 ? s.trip.km / s.trip.liters : 0;
+  const rangeKm = Math.round(fuelLevel * TANK_LITERS * (kmPerLiter > 3 ? kmPerLiter : 11));
+  const hours = s.trip.seconds / 3600;
   return {
+    rpm: estimateRpm(s),
+    fuelLevel,
+    rangeKm,
+    tripAvgSpeed: hours > 0.0005 ? s.trip.km / hours : 0,
+    tripKmPerLiter: kmPerLiter,
     operational,
     conditions,
     accReady: ready,
@@ -451,6 +483,10 @@ export function reduce(s: SimState, a: Action): SimState {
       };
     case "variant":
       return createInitialState(a.hasMaxDrive);
+    case "load":
+      return a.state;
+    case "tripReset":
+      return { ...s, trip: { km: 0, seconds: 0, liters: 0 } };
     case "reset":
       return createInitialState(s.hasMaxDrive);
     default:
@@ -549,12 +585,23 @@ function tick(prev: SimState, dt: number): SimState {
   const aebActing = aeb.stage === "partial" || aeb.stage === "emergency";
   const aebStopped = aebActing || (s.aebStopped && !s.brake && s.accel === 0);
 
+  // Viagem (consumo ILUSTRATIVO: litros por hora crescem com a velocidade e com o acelerador).
+  const km = (speed / 3600) * dt;
+  const litersPerHour = (0.9 + speed * 0.055) * (s.accel > 0 ? 1.4 : 1);
+  const trip = {
+    km: s.trip.km + km,
+    seconds: s.trip.seconds + dt,
+    liters: s.trip.liters + (litersPerHour * dt) / 3600,
+  };
+
   return {
     ...s,
     speed,
     target: { ...t, distance },
     collided,
     aebStopped,
+    odo: s.odo + km,
+    trip,
   };
 }
 

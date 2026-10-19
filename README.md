@@ -6,6 +6,8 @@ As regras (velocidades de ativação, condições, o que cancela o quê) foram l
 
 ## O que você pode fazer
 
+- Escolher uma **situação guiada** (ACC seguindo um carro, AEB com carro parado ou pedestre, ponto cego, saída de faixa, farol alto, ré com tráfego cruzado...). Os passos se marcam sozinhos.
+- Ver tudo em uma **cena 3D**: seu carro, a pista, os outros carros, o pedestre e as zonas dos sensores, com rótulos e câmeras (atrás, de cima, de lado, automática).
 - Ligar o carro, mudar a velocidade e o câmbio e ver o painel reagir.
 - Apertar os botões do volante (ACC, RES+, SET–, distância, LIMIT, cancelar) e a haste de luzes.
 - Colocar um carro, um pedestre ou um obstáculo parado à frente e ver o ACC seguir ou o AEB frear.
@@ -28,13 +30,14 @@ npm run verify     # verificação legal + testes + build
 | --- | --- |
 | `src/engine` | Regras puras em TypeScript, com testes. Nada de React aqui. |
 | `src/content` | Textos explicativos e mensagens do painel. |
-| `src/components` | Painel em SVG, controles e painéis laterais. |
+| `src/components` | Painel em SVG (dois mostradores, tela central com páginas Assistência e Viagem), controles, treinador e lista "O que está acontecendo". |
+| `src/scene` | Cena 3D com three.js (carregada sob demanda), toda modelada em código, sem modelos nem texturas externos. |
 | `scripts` | Verificação de direitos autorais. |
 
 ## O que é fiel ao manual e o que é ilustrativo
 
 - **Fiel:** faixas de velocidade (ACC 30 a 150 km/h, LDW a partir de 65, ponto cego a partir de 15, farol alto acima de 40, câmera 360° abaixo de 20 e fecha acima de 30, faixas do AEB), condições de ativação, o que cancela cada sistema.
-- **Ilustrativo:** física do carro, tempos de cada etapa do AEB, distância real de seguimento do ACC, posição dos botões no volante e o visual do painel. O manual não informa esses valores.
+- **Ilustrativo:** física do carro, tempos de cada etapa do AEB, distância real de seguimento do ACC, posição dos botões no volante o visual do painel, o formato e o alcance das zonas de sensor na cena 3D, rotação, combustível, temperatura, consumo e autonomia. O manual não informa esses valores.
 - **Fora do escopo por enquanto:** o controle de cruzeiro simples das versões sem Max Drive, sensores de estacionamento, TPMS, modos de direção e menus do multimídia além de Condução assistida.
 
 ## Direitos autorais

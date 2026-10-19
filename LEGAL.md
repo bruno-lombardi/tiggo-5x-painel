@@ -7,7 +7,8 @@ Este é um projeto **educacional, independente e não oficial**. Não tem víncu
 - Código próprio (licença MIT, veja `LICENSE`).
 - Textos explicativos escritos **em palavras próprias**, a partir da leitura do Manual do Proprietário do Tiggo 5X Pro. São resumos para estudo, não cópias.
 - Fatos técnicos (por exemplo, "o LDW ativa a partir de 65 km/h"), sempre acompanhados da seção do manual onde conferir.
-- Desenhos vetoriais criados do zero para este projeto.
+- Desenhos vetoriais criados do zero para este projeto: o painel segue só a organização geral (dois mostradores, tela central), sem copiar a arte do fabricante, e o carro, o pedestre e a pista 3D são formas geométricas próprias, sem modelos de terceiros.
+- Dependência `three` (licença MIT) para a cena 3D.
 
 ## O que este repositório NÃO contém (e não deve conter)
 

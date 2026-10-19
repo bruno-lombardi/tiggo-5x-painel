@@ -72,6 +72,11 @@ export interface SimState {
   collided: boolean;
   /** relógio de simulação, para animações no painel */
   clock: number;
+  /** cena noturna (só visual; ajuda a ver o farol alto) */
+  night: boolean;
+  /** hodômetro total (km) e dados da viagem — consumo ILUSTRATIVO */
+  odo: number;
+  trip: { km: number; seconds: number; liters: number };
 }
 
 export type Action =
@@ -97,4 +102,6 @@ export type Action =
   | { type: "target"; target: Partial<Target> }
   | { type: "resetTarget" }
   | { type: "variant"; hasMaxDrive: boolean }
+  | { type: "load"; state: SimState }
+  | { type: "tripReset" }
   | { type: "reset" };
