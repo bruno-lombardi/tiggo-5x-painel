@@ -1,4 +1,4 @@
-import { Suspense, lazy } from "react";
+import { Suspense, lazy, useCallback, useEffect, useRef, useState } from "react";
 import type { Dispatch, ReactNode } from "react";
 import { narrate } from "../content/narration";
 import { SCENARIOS } from "../content/scenarios";
@@ -412,6 +412,63 @@ export function MissionMenu(props: { scenarioId: string | null; onPick: (id: str
 /* Tela completa                                                       */
 /* ------------------------------------------------------------------ */
 
+/** Tela cheia: usa a API do navegador; se não existir (ex.: iPhone), cobre a janela com CSS. */
+function useFullscreen() {
+  const ref = useRef<HTMLDivElement>(null);
+  const [native, setNative] = useState(false);
+  const [fake, setFake] = useState(false);
+  const on = native || fake;
+
+  useEffect(() => {
+    const sync = () => setNative(document.fullscreenElement === ref.current && !!ref.current);
+    document.addEventListener("fullscreenchange", sync);
+    return () => document.removeEventListener("fullscreenchange", sync);
+  }, []);
+
+  useEffect(() => {
+    document.documentElement.classList.toggle("has-fullscreen", on);
+    return () => document.documentElement.classList.remove("has-fullscreen");
+  }, [on]);
+
+  const exit = useCallback(() => {
+    setFake(false);
+    if (document.fullscreenElement) void document.exitFullscreen().catch(() => undefined);
+  }, []);
+
+  const enter = useCallback(async () => {
+    const el = ref.current;
+    if (!el) return;
+    if (el.requestFullscreen) {
+      try {
+        await el.requestFullscreen({ navigationUI: "hide" });
+        return;
+      } catch {
+        /* cai para o modo por CSS */
+      }
+    }
+    setFake(true);
+  }, []);
+
+  const toggle = useCallback(() => (on ? exit() : void enter()), [on, enter, exit]);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.ctrlKey || e.metaKey || e.altKey) return;
+      const tag = (e.target as HTMLElement | null)?.tagName;
+      if (e.code === "KeyF" && tag !== "INPUT" && tag !== "SELECT" && tag !== "TEXTAREA" && !e.repeat) {
+        e.preventDefault();
+        toggle();
+      } else if (e.code === "Escape" && fake) {
+        setFake(false);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [toggle, fake]);
+
+  return { ref, on, toggle };
+}
+
 export function DriveView(props: {
   state: SimState;
   derived: Derived;
@@ -435,9 +492,11 @@ export function DriveView(props: {
   const { state: s, derived: d, scenario } = props;
   const finished = scenario ? props.progress >= scenario.steps.length : false;
   const showStart = !scenario && !props.started && !s.ignitionOn;
+  const fs = useFullscreen();
+  const [keysOpen, setKeysOpen] = useState(() => typeof matchMedia !== "undefined" && matchMedia("(pointer: coarse)").matches);
 
   return (
-    <div className="drive">
+    <div className={`drive ${fs.on ? "drive-full" : ""} ${keysOpen ? "keys-open" : ""}`} ref={fs.ref}>
       <div className="drive-stage">
         <Suspense fallback={<div className="scene scene-loading">Carregando a estrada…</div>}>
           <Scene3D state={s} derived={d} variant="game">
@@ -449,6 +508,34 @@ export function DriveView(props: {
               onResetStats={props.stats.reset}
             />
             <Toast state={s} derived={d} />
+            <div className="fs-tools">
+              <button
+                type="button"
+                className="fs-btn"
+                aria-pressed={fs.on}
+                aria-label={fs.on ? "Sair da tela cheia (F ou Esc)" : "Tela cheia (F)"}
+                onClick={fs.toggle}
+              >
+                <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  {fs.on ? (
+                    <path d="M9 4v5H4M15 4v5h5M9 20v-5H4M15 20v-5h5" />
+                  ) : (
+                    <path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5" />
+                  )}
+                </svg>
+                <span>{fs.on ? "Sair" : "Tela cheia"}</span>
+              </button>
+              {fs.on ? (
+                <button type="button" className="fs-btn" aria-pressed={keysOpen} onClick={() => setKeysOpen((v) => !v)}>
+                  <span>Teclas</span>
+                </button>
+              ) : null}
+            </div>
+            {fs.on ? (
+              <p className="fs-hint" aria-hidden="true">
+                ↑ acelera · ↓ freia · ← → volante · F ou Esc sai da tela cheia
+              </p>
+            ) : null}
             {showStart ? <StartCard onStart={props.begin} onMission={props.startMission} /> : null}
             {scenario && finished ? (
               <QuizCard

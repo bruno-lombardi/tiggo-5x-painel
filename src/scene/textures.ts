@@ -59,7 +59,7 @@ function valueNoise(size: number, cell: number, rand: () => number) {
   return out;
 }
 
-export function asphaltTextures(): { map: THREE.CanvasTexture; bump: THREE.CanvasTexture } {
+export function asphaltTextures(): { map: THREE.CanvasTexture; bump: THREE.CanvasTexture; rough: THREE.CanvasTexture } {
   const size = 512;
   const r = rng(11);
   const big = valueNoise(size, 64, r);
@@ -100,7 +100,22 @@ export function asphaltTextures(): { map: THREE.CanvasTexture; bump: THREE.Canva
     }
     cx.stroke();
   }
-  return { map: finish(c, { repeat: [3, 60] }), bump: finish(b, { repeat: [3, 60], srgb: false }) };
+  // Rugosidade: asfalto áspero, com trechos polidos e manchas que refletem a luz à noite.
+  const rr = canvas(size);
+  const rx = rr.getContext("2d")!;
+  const rimg = rx.createImageData(size, size);
+  for (let i = 0; i < size * size; i++) {
+    const patch = big[i] > 0.7 ? 0.8 : mid[i] > 0.78 ? 0.86 : 0.96;
+    const v = Math.min(255, (patch - fine[i] * 0.12) * 255);
+    rimg.data[i * 4] = rimg.data[i * 4 + 1] = rimg.data[i * 4 + 2] = v;
+    rimg.data[i * 4 + 3] = 255;
+  }
+  rx.putImageData(rimg, 0, 0);
+  return {
+    map: finish(c, { repeat: [3, 60] }),
+    bump: finish(b, { repeat: [3, 60], srgb: false }),
+    rough: finish(rr, { repeat: [3, 60], srgb: false }),
+  };
 }
 
 export function grassTexture(): THREE.CanvasTexture {
@@ -252,4 +267,38 @@ export function cargoTexture(): THREE.CanvasTexture {
   cx.fillStyle = "#1f6fb2";
   cx.fillRect(0, 100, 256, 12);
   return finish(c);
+}
+
+/** Sombra suave de contato sob os veículos. */
+export function blobTexture(): THREE.CanvasTexture {
+  const c = canvas(128);
+  const cx = c.getContext("2d")!;
+  const g = cx.createRadialGradient(64, 64, 4, 64, 64, 64);
+  g.addColorStop(0, "rgba(0,0,0,0.75)");
+  g.addColorStop(0.55, "rgba(0,0,0,0.38)");
+  g.addColorStop(1, "rgba(0,0,0,0)");
+  cx.fillStyle = g;
+  cx.fillRect(0, 0, 128, 128);
+  return finish(c, { aniso: 1 });
+}
+
+/** Tufos de capim (lâminas com transparência), para cruzar dois planos. */
+export function tuftTexture(): THREE.CanvasTexture {
+  const c = canvas(128);
+  const cx = c.getContext("2d")!;
+  const r = rng(77);
+  for (let i = 0; i < 26; i++) {
+    const x = 12 + r() * 104;
+    const h = 40 + r() * 80;
+    const lean = (r() - 0.5) * 36;
+    const g = 120 + r() * 80;
+    cx.strokeStyle = `rgb(${60 + r() * 40},${g},${40 + r() * 30})`;
+    cx.lineWidth = 2 + r() * 2;
+    cx.lineCap = "round";
+    cx.beginPath();
+    cx.moveTo(x, 128);
+    cx.quadraticCurveTo(x + lean * 0.3, 128 - h * 0.6, x + lean, 128 - h);
+    cx.stroke();
+  }
+  return finish(c, { aniso: 4 });
 }

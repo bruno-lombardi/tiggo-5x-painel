@@ -1,7 +1,19 @@
 import * as THREE from "three";
 import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js";
 import { toCreasedNormals } from "three/addons/utils/BufferGeometryUtils.js";
-import { cargoTexture, plateTexture } from "./textures";
+import { blobTexture, cargoTexture, plateTexture } from "./textures";
+
+let blobMat: THREE.MeshBasicMaterial | null = null;
+/** Sombra suave de contato: aterra o veículo no asfalto, de dia e de noite. */
+function contactBlob(w: number, l: number, z: number) {
+  blobMat ??= new THREE.MeshBasicMaterial({ map: blobTexture(), transparent: true, depthWrite: false, opacity: 0.9 });
+  const g = new THREE.PlaneGeometry(w, l);
+  g.rotateX(-Math.PI / 2);
+  const m = new THREE.Mesh(g, blobMat);
+  m.position.set(0, 0.045, z);
+  m.renderOrder = 1;
+  return m;
+}
 
 /**
  * Modelos 3D desenhados em código: SUV genérico, caminhão e pedestre.
@@ -421,6 +433,7 @@ export function makeCar(color: number): CarParts {
   }
 
   shadowed(group, true, false);
+  group.add(contactBlob(2.7, 5.6, 0));
   return { group, head, tail, turnL, turnR, reverse, wheels, halfLen: 2.3 };
 }
 
@@ -507,6 +520,7 @@ export function makeTruck(): CarParts {
     }
   }
   shadowed(group, true, false);
+  group.add(contactBlob(3.1, 7.6, 0));
   return { group, head, tail, turnL, turnR, reverse, wheels, halfLen: 3.35 };
 }
 

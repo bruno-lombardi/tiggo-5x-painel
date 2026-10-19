@@ -6,6 +6,7 @@ import {
   glowTexture,
   grassTexture,
   poolTexture,
+  tuftTexture,
   signTexture,
   speedSignTexture,
   wearTexture,
@@ -23,6 +24,7 @@ export interface EnvInput {
   dt: number;
   clock: number;
   still: boolean;
+  speed: number;
 }
 
 export interface Env {
@@ -232,7 +234,8 @@ export function createEnvironment(scene: THREE.Scene, renderer: THREE.WebGLRende
   const asphalt = asphaltTextures();
   keep(asphalt.map);
   keep(asphalt.bump);
-  const roadMat = new THREE.MeshStandardMaterial({ map: asphalt.map, bumpMap: asphalt.bump, bumpScale: 0.6, roughness: 0.93, metalness: 0 });
+  keep(asphalt.rough);
+  const roadMat = new THREE.MeshStandardMaterial({ map: asphalt.map, bumpMap: asphalt.bump, bumpScale: 0.6, roughnessMap: asphalt.rough, roughness: 1, metalness: 0 });
   keep(roadMat);
   const ROAD_LEN = 800;
   const roadZ = -300;
@@ -396,6 +399,27 @@ export function createEnvironment(scene: THREE.Scene, renderer: THREE.WebGLRende
     out.setAttribute("position", new THREE.BufferAttribute(pos, 3));
     out.setAttribute("normal", new THREE.BufferAttribute(nor, 3));
     out.setAttribute("color", new THREE.BufferAttribute(col, 3));
+    return out;
+  };
+
+  const mergeAll2 = (list: THREE.BufferGeometry[]) => {
+    const pieces = list.map((g) => g.toNonIndexed());
+    let count = 0;
+    for (const g of pieces) count += g.getAttribute("position").count;
+    const pos = new Float32Array(count * 3);
+    const nor = new Float32Array(count * 3);
+    const uv = new Float32Array(count * 2);
+    let o = 0;
+    for (const g of pieces) {
+      pos.set(g.getAttribute("position").array as Float32Array, o * 3);
+      nor.set(g.getAttribute("normal").array as Float32Array, o * 3);
+      uv.set(g.getAttribute("uv").array as Float32Array, o * 2);
+      o += g.getAttribute("position").count;
+    }
+    const out = new THREE.BufferGeometry();
+    out.setAttribute("position", new THREE.BufferAttribute(pos, 3));
+    out.setAttribute("normal", new THREE.BufferAttribute(nor, 3));
+    out.setAttribute("uv", new THREE.BufferAttribute(uv, 2));
     return out;
   };
 
@@ -564,6 +588,129 @@ export function createEnvironment(scene: THREE.Scene, renderer: THREE.WebGLRende
   scene.add(pools);
   keep(glowTexture());
 
+  /* ---------------- Brilho do sol ---------------- */
+  const glowTex = keep(glowTexture());
+  const sunGlowMat = new THREE.SpriteMaterial({ map: glowTex, color: 0xfff0c8, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, fog: false, opacity: 0.8 });
+  keep(sunGlowMat);
+  const sunGlow = new THREE.Sprite(sunGlowMat);
+  sunGlow.scale.setScalar(520);
+  sunGlow.renderOrder = -1;
+  scene.add(sunGlow);
+  const sunCore = new THREE.Sprite(sunGlowMat.clone());
+  sunCore.scale.setScalar(150);
+  sunCore.renderOrder = -1;
+  scene.add(sunCore);
+
+  /* ---------------- Capim e pedras ---------------- */
+  const tuftTex = keep(tuftTexture());
+  const tuftGeo = new THREE.PlaneGeometry(1.2, 1.2);
+  tuftGeo.translate(0, 0.6, 0);
+  const tuftGeo2 = tuftGeo.clone();
+  tuftGeo2.rotateY(Math.PI / 2);
+  const tuftMerged = mergeAll2([tuftGeo, tuftGeo2]);
+  keep(tuftMerged);
+  const tuftMat = keep(new THREE.MeshStandardMaterial({ map: tuftTex, alphaTest: 0.5, side: THREE.DoubleSide, roughness: 1, metalness: 0 }));
+  const TUFT_N = 260;
+  const tufts = new THREE.InstancedMesh(tuftMerged, tuftMat, TUFT_N);
+  tufts.frustumCulled = false;
+  scene.add(tufts);
+  const tuftItems = Array.from({ length: TUFT_N }, (_, k) => {
+    const left = k % 2 === 0;
+    return { x: left ? -17.5 - rnd(k + 5) * 7 : 8.9 + rnd(k + 5) * 7, s: 0.7 + rnd(k * 3 + 9) * 0.9, rot: rnd(k * 5) * 6, j: rnd(k * 7) * 1.4 };
+  });
+
+  const rockGeo = new THREE.DodecahedronGeometry(0.7, 1);
+  {
+    const pos = rockGeo.getAttribute("position");
+    for (let i = 0; i < pos.count; i++) {
+      const n = 0.78 + hash(pos.getX(i) * 5, pos.getY(i) * 5 + pos.getZ(i) * 3) * 0.44;
+      pos.setXYZ(i, pos.getX(i) * n * 1.3, pos.getY(i) * n * 0.7, pos.getZ(i) * n);
+    }
+    rockGeo.computeVertexNormals();
+  }
+  keep(rockGeo);
+  const rockMat = keep(new THREE.MeshStandardMaterial({ color: 0x67655f, roughness: 0.95, flatShading: true, bumpMap: asphalt.bump, bumpScale: 3 }));
+  const ROCK_N = 46;
+  const rocks = new THREE.InstancedMesh(rockGeo, rockMat, ROCK_N);
+  rocks.castShadow = true;
+  rocks.frustumCulled = false;
+  scene.add(rocks);
+  const rockItems = Array.from({ length: ROCK_N }, (_, k) => ({
+    x: k % 2 ? 9.2 + rnd(k + 40) * 22 : -18.5 - rnd(k + 40) * 22,
+    s: 0.6 + rnd(k * 3 + 1) * 1.8,
+    rot: rnd(k * 5 + 2) * 6,
+    j: rnd(k * 7 + 3) * 8,
+  }));
+
+  /* ---------------- Balizadores refletivos ---------------- */
+  const delGeo = new THREE.BoxGeometry(0.1, 0.9, 0.06);
+  delGeo.translate(0, 0.45, 0);
+  keep(delGeo);
+  const delMat = keep(new THREE.MeshStandardMaterial({ color: 0xe6e8ea, roughness: 0.6, emissive: 0xff2a20, emissiveIntensity: 0.0 }));
+  const DEL_N = SCROLL_LEN / 25;
+  const delR = new THREE.InstancedMesh(delGeo, delMat, DEL_N);
+  delR.frustumCulled = false;
+  delR.position.x = 8.35;
+  scene.add(delR);
+  const reflGeo = new THREE.PlaneGeometry(0.1, 0.12);
+  reflGeo.translate(0, 0.72, 0.034);
+  keep(reflGeo);
+  const reflMat = keep(new THREE.MeshBasicMaterial({ color: 0xff3a2a }));
+  const reflR = new THREE.InstancedMesh(reflGeo, reflMat, DEL_N);
+  reflR.frustumCulled = false;
+  reflR.position.x = 8.35;
+  scene.add(reflR);
+
+  /* ---------------- Viaduto ---------------- */
+  const overpass = new THREE.Group();
+  {
+    const conc = keep(new THREE.MeshStandardMaterial({ color: 0xaaaca8, roughness: 0.92, bumpMap: asphalt.bump, bumpScale: 1.5 }));
+    const deck = new THREE.Mesh(new THREE.BoxGeometry(60, 1.1, 9), conc);
+    deck.position.set(-4, 7.6, 0);
+    const girder = new THREE.Mesh(new THREE.BoxGeometry(60, 0.5, 6.4), conc);
+    girder.position.set(-4, 6.8, 0);
+    const road = new THREE.Mesh(new THREE.BoxGeometry(60, 0.06, 7.6), roadMat);
+    road.position.set(-4, 8.18, 0);
+    const para1 = new THREE.Mesh(new THREE.BoxGeometry(60, 0.9, 0.35), conc);
+    para1.position.set(-4, 8.7, 4.3);
+    const para2 = para1.clone();
+    para2.position.z = -4.3;
+    overpass.add(deck, girder, road, para1, para2);
+    for (const x of [-27, 18, -4.3]) {
+      if (x === -4.3) continue;
+      const col = new THREE.Mesh(new THREE.BoxGeometry(1.6, 7.2, 3.2), conc);
+      col.position.set(x, 3.6, 0);
+      overpass.add(col);
+    }
+    for (const x of [12.5, -20.5]) {
+      const col = new THREE.Mesh(new THREE.CylinderGeometry(0.7, 0.8, 7.2, 14), conc);
+      col.position.set(x, 3.6, 0);
+      overpass.add(col);
+    }
+    const ramp = new THREE.Mesh(new THREE.BoxGeometry(14, 0.5, 9), conc);
+    overpass.traverse((o) => {
+      if ((o as THREE.Mesh).isMesh) {
+        o.castShadow = true;
+        o.receiveShadow = true;
+      }
+    });
+    void ramp;
+    scene.add(overpass);
+  }
+
+  /* ---------------- Linhas de velocidade ---------------- */
+  const LINE_N = 90;
+  const linePos = new Float32Array(LINE_N * 6);
+  const lineGeo = new THREE.BufferGeometry();
+  lineGeo.setAttribute("position", new THREE.BufferAttribute(linePos, 3));
+  const lineMat = new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0, depthWrite: false, fog: false });
+  keep(lineGeo);
+  keep(lineMat);
+  const speedLines = new THREE.LineSegments(lineGeo, lineMat);
+  speedLines.frustumCulled = false;
+  scene.add(speedLines);
+  const lineSeed = Array.from({ length: LINE_N }, (_, k) => ({ x: (rnd(k + 90) - 0.5) * 16, y: 0.4 + rnd(k * 3 + 90) * 4.5, z: rnd(k * 7 + 90) * 60 }));
+
   /* ---------------- Atualização ---------------- */
   const col = new THREE.Color();
   const dayFog = new THREE.Color(0xc4d6e3);
@@ -608,6 +755,7 @@ export function createEnvironment(scene: THREE.Scene, renderer: THREE.WebGLRende
     /* movimento do cenário */
     asphalt.map.offset.y = (travel / 7) % 1;
     asphalt.bump.offset.y = (travel / 7) % 1;
+    asphalt.rough.offset.y = (travel / 7) % 1;
     grassMap.offset.y = (travel / (760 / 40)) % 1;
 
     for (let i = 0; i < DASH_N; i++) {
@@ -637,6 +785,58 @@ export function createEnvironment(scene: THREE.Scene, renderer: THREE.WebGLRende
         pl.mesh.setMatrixAt(k, dummy.matrix);
       }
       pl.mesh.instanceMatrix.needsUpdate = true;
+    }
+
+    /* brilho do sol */
+    const sunUp = smooth(-2, 22, elev) * (1 - nightK);
+    sunGlow.position.set(ownX + sunDir.x * 1350, sunDir.y * 1350, sunDir.z * 1350);
+    sunCore.position.copy(sunGlow.position);
+    sunGlowMat.opacity = 0.55 * sunUp;
+    (sunCore.material as THREE.SpriteMaterial).opacity = 0.9 * sunUp;
+    sunGlow.visible = sunCore.visible = sunUp > 0.01;
+
+    /* capim, pedras, balizadores, viaduto */
+    for (let k = 0; k < TUFT_N; k++) {
+      const it = tuftItems[k];
+      const z = wrapZ(travel + it.j * 40, k, SCROLL_LEN / TUFT_N);
+      dummy.position.set(it.x, terrainHeight(it.x, z) - 0.02, z);
+      dummy.rotation.set(0, it.rot, 0);
+      dummy.scale.setScalar(it.s);
+      dummy.updateMatrix();
+      tufts.setMatrixAt(k, dummy.matrix);
+    }
+    tufts.instanceMatrix.needsUpdate = true;
+    for (let k = 0; k < ROCK_N; k++) {
+      const it = rockItems[k];
+      const z = wrapZ(travel + it.j * 30, k, SCROLL_LEN / ROCK_N);
+      dummy.position.set(it.x, terrainHeight(it.x, z) + 0.12 * it.s, z);
+      dummy.rotation.set(0, it.rot, 0);
+      dummy.scale.setScalar(it.s);
+      dummy.updateMatrix();
+      rocks.setMatrixAt(k, dummy.matrix);
+    }
+    rocks.instanceMatrix.needsUpdate = true;
+    for (let k = 0; k < DEL_N; k++) {
+      m4.makeTranslation(0, 0, wrapZ(travel, k, 25));
+      delR.setMatrixAt(k, m4);
+      reflR.setMatrixAt(k, m4);
+    }
+    delR.instanceMatrix.needsUpdate = true;
+    reflR.instanceMatrix.needsUpdate = true;
+    delMat.emissiveIntensity = 0.5 * nightK;
+    overpass.position.z = wrapZ(travel + 260, 0, 1, 1100, -800);
+
+    /* linhas de velocidade */
+    const spK = Math.min(1, Math.max(0, (p.speed - 60) / 90));
+    lineMat.opacity = p.still ? 0 : 0.35 * spK * spK;
+    if (lineMat.opacity > 0.005) {
+      const len = 1.5 + spK * 7;
+      for (let k = 0; k < LINE_N; k++) {
+        const it = lineSeed[k];
+        const z = -50 + ((((it.z + travel * 1.6) % 60) + 60) % 60);
+        linePos.set([ownX + it.x, it.y, z, ownX + it.x, it.y, z - len], k * 6);
+      }
+      lineGeo.attributes.position.needsUpdate = true;
     }
 
     gantry.position.z = wrapZ(travel + 120, 0, 1, 720, -560);

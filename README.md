@@ -23,7 +23,7 @@ As regras (velocidades de ativação, condições, o que cancela o quê) foram l
 | H | pisca-alerta | K | câmera 360° |
 | T O U M | cinto, porta, HDC, ESP | Z | SET– com o carro parado |
 
-Todas as teclas também existem como botões na tela, para celular e tablet. Extra: **C** é a buzina (só teclado).
+Todas as teclas também existem como botões na tela, para celular e tablet. Extra: **C** é a buzina (só teclado) e **F** liga ou desliga a **tela cheia** (também há o botão “Tela cheia”). Na tela cheia a estrada ocupa tudo, o painel do carro fica embaixo e o botão “Teclas” abre os controles na tela.
 
 **Som:** ao começar a dirigir, o som liga sozinho (botão “Som” e volume no topo). Tudo é sintetizado em tempo real, sem arquivos de áudio: motor, vento, pneus, pássaros de dia e grilos à noite, carros passando, partida, câmbio, setas, freio de estacionamento, portas, cintos, alertas dos assistentes, chiado de freada e ABS, faixa sonora na borda da pista, colisão e buzina. Os sons são ilustrativos.
 
@@ -55,7 +55,7 @@ npm run verify     # verificação legal + testes + build
 | `src/input` | Controle único (teclado e botões na tela) e o ambiente sonoro sintetizado (`soundscape.ts`). |
 | `src/content` | Textos explicativos e mensagens do painel. |
 | `src/components` | Painel em SVG (dois mostradores, tela central com páginas Assistência e Viagem), controles, treinador e lista "O que está acontecendo". |
-| `src/scene` | Cena 3D com three.js (carregada sob demanda), toda modelada em código: carro, caminhão, pedestres, relevo, árvores, placas e postes, com texturas geradas em canvas, sombras, céu com sol e estrelas e brilho (bloom). Sem modelos, texturas nem imagens externas. O botão “Gráficos” alterna Leve, Normal e Alta (o simulador reduz sozinho se ficar lento; `?q=0|1|2` força um nível). |
+| `src/scene` | Cena 3D com three.js (carregada sob demanda), toda modelada em código: carro, caminhão, pedestres, relevo, árvores, placas e postes, com texturas geradas em canvas, sombras, céu com sol e estrelas, brilho (bloom), viaduto, balizadores, pedras, capim e linhas de velocidade. Sem modelos, texturas nem imagens externas. O botão “Gráficos” alterna Leve, Normal e Alta (o simulador reduz sozinho se ficar lento; `?q=0|1|2` força um nível). |
 | `scripts` | Verificação de direitos autorais. |
 
 ## O que é fiel ao manual e o que é ilustrativo

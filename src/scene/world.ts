@@ -367,7 +367,7 @@ export function createWorld(host: HTMLElement, labelLayer: HTMLElement): World {
 
     /* Dia e noite */
     nightK += ((s.night ? 1 : 0) - nightK) * (1 - Math.exp(-dt * 3));
-    env.update({ travel, nightK, ownX, dt, clock, still });
+    env.update({ travel, nightK, ownX, dt, clock, still, speed: s.speed });
 
     /* Seu carro e a saída de faixa */
     ownX += (s.lateral - ownX) * (1 - Math.exp(-dt * 12));
@@ -645,6 +645,9 @@ export function createWorld(host: HTMLElement, labelLayer: HTMLElement): World {
     renderer.setSize(width, height, false);
     composer?.setSize(width, height);
     camera.aspect = width / height;
+    // Em tela cheia o painel cobre a parte de baixo: sobe o enquadramento para o carro ficar à vista.
+    if (host.closest(".drive-full")) camera.setViewOffset(width, height, 0, height * (width < 700 ? 0.17 : 0.25), width, height);
+    else camera.clearViewOffset();
     camera.updateProjectionMatrix();
   }
 
