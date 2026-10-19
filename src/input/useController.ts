@@ -8,7 +8,11 @@ function typingTarget(el: EventTarget | null): boolean {
   const e = el as HTMLElement | null;
   if (!e || !e.tagName) return false;
   const tag = e.tagName;
-  return tag === "INPUT" || tag === "SELECT" || tag === "TEXTAREA" || e.getAttribute("role") === "radio";
+  if (tag === "SELECT" || tag === "TEXTAREA") return true;
+  if (tag !== "INPUT") return false;
+  // botões de opção e caixas de seleção não usam as setas para digitar: o jogo tem prioridade
+  const type = (e as HTMLInputElement).type;
+  return type !== "radio" && type !== "checkbox" && type !== "button";
 }
 
 /** Liga o teclado ao controle do carro. `pressed` diz quais teclas estão apertadas. */
@@ -31,13 +35,15 @@ export function useController(dispatch: Dispatch<Action>, state: SimState, enabl
   useEffect(() => {
     if (!enabled) return;
     const onDown = (e: KeyboardEvent) => {
-      if (e.repeat || e.ctrlKey || e.metaKey || e.altKey) return;
+      if (e.ctrlKey || e.metaKey || e.altKey) return;
       const id = controller.codeToId(e.code);
       if (!id || typingTarget(e.target)) return;
       // Espaço e Enter em um botão focado continuam funcionando como clique.
       const tag = (e.target as HTMLElement | null)?.tagName;
       if ((e.code === "Space" || e.code === "Enter") && tag === "BUTTON") return;
+      // Também na repetição automática da tecla: sem isso, a seta segurada rola a página.
       e.preventDefault();
+      if (e.repeat) return;
       controller.down(id);
     };
     const onUp = (e: KeyboardEvent) => {
