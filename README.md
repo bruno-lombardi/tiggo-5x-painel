@@ -4,6 +4,27 @@ Simulador interativo, educacional e **não oficial** para entender como funciona
 
 As regras (velocidades de ativação, condições, o que cancela o quê) foram levantadas do Manual do Proprietário e escritas aqui em palavras próprias, cada uma com a seção do manual para você conferir.
 
+## Dois modos
+
+- **Dirigir** (padrão): a estrada em 3D ocupa a tela, o painel do carro fica embaixo e você dirige com o teclado. Há uma **estrada livre**, onde carros, pedestres e obstáculos aparecem sozinhos (com placar), e **missões** com passos automáticos e um quiz no final.
+- **Laboratório**: todos os controles e painéis para montar qualquer situação.
+
+### Teclas
+
+| Tecla | Ação | Tecla | Ação |
+| --- | --- | --- | --- |
+| ↑ / ⇧↑ | acelerar / a fundo | A | liga o ACC |
+| ↓ | frear | S | SET– (segure: de 5 em 5) |
+| ← → | volante | W | RES+ (segure: de 5 em 5) |
+| Enter | ligar / desligar | X | cancelar |
+| Espaço | freio de estacionamento | G | distância do ACC |
+| P R N D | câmbio | L | limitador |
+| Q / E | seta esquerda / direita | B / V | farol alto automático: empurrar / puxar |
+| H | pisca-alerta | K | câmera 360° |
+| T O U M | cinto, porta, HDC, ESP | Z | SET– com o carro parado |
+
+Todas as teclas também existem como botões na tela, para celular e tablet.
+
 ## O que você pode fazer
 
 - Escolher uma **situação guiada** (ACC seguindo um carro, AEB com carro parado ou pedestre, ponto cego, saída de faixa, farol alto, ré com tráfego cruzado...). Os passos se marcam sozinhos.
@@ -28,7 +49,8 @@ npm run verify     # verificação legal + testes + build
 
 | Pasta | Conteúdo |
 | --- | --- |
-| `src/engine` | Regras puras em TypeScript, com testes. Nada de React aqui. |
+| `src/engine` | Regras puras em TypeScript, com testes, incluindo o diretor do trânsito da estrada livre. Nada de React aqui. |
+| `src/input` | Controle único (teclado e botões na tela) e bipes opcionais dos alertas. |
 | `src/content` | Textos explicativos e mensagens do painel. |
 | `src/components` | Painel em SVG (dois mostradores, tela central com páginas Assistência e Viagem), controles, treinador e lista "O que está acontecendo". |
 | `src/scene` | Cena 3D com three.js (carregada sob demanda), toda modelada em código, sem modelos nem texturas externos. |
@@ -37,7 +59,7 @@ npm run verify     # verificação legal + testes + build
 ## O que é fiel ao manual e o que é ilustrativo
 
 - **Fiel:** faixas de velocidade (ACC 30 a 150 km/h, LDW a partir de 65, ponto cego a partir de 15, farol alto acima de 40, câmera 360° abaixo de 20 e fecha acima de 30, faixas do AEB), condições de ativação, o que cancela cada sistema.
-- **Ilustrativo:** física do carro, tempos de cada etapa do AEB, distância real de seguimento do ACC, posição dos botões no volante o visual do painel, o formato e o alcance das zonas de sensor na cena 3D, rotação, combustível, temperatura, consumo e autonomia. O manual não informa esses valores.
+- **Ilustrativo:** física do carro, tempos de cada etapa do AEB, distância real de seguimento do ACC, posição dos botões no volante o visual do painel, o formato e o alcance das zonas de sensor na cena 3D, rotação, combustível, temperatura, consumo e autonomia, o trânsito e os sons dos alertas. O manual não informa esses valores.
 - **Fora do escopo por enquanto:** o controle de cruzeiro simples das versões sem Max Drive, sensores de estacionamento, TPMS, modos de direção e menus do multimídia além de Condução assistida.
 
 ## Direitos autorais

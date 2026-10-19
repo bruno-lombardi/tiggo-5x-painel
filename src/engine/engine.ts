@@ -94,6 +94,8 @@ export function createInitialState(hasMaxDrive = true): SimState {
     collided: false,
     clock: 0,
     night: false,
+    lateral: 0,
+    steer: 0,
     odo: 6673,
     trip: { km: 0, seconds: 0, liters: 0 },
   };
@@ -138,8 +140,23 @@ function hysteresis(prev: Level, speed: number, on: number, off: number): Level 
   return "off";
 }
 
-function closingSpeedMs(s: SimState): number {
+export const LANE_WIDTH = 3.5;
+const MAX_LATERAL = 3.9;
+
+/** O alvo está na trajetória do carro? (a menos de ~2 m do centro da sua faixa) */
+export function inPath(s: SimState): boolean {
   const t = s.target;
+  if (t.kind === "none" || t.distance < -2) return false;
+  return Math.abs(s.lateral - (t.lane ?? 0) * LANE_WIDTH) < 2.0;
+}
+
+/** Alvo que os sensores frontais consideram: só o que está na trajetória. */
+export function pathTarget(s: SimState): SimState["target"] {
+  return inPath(s) ? s.target : { ...s.target, kind: "none" };
+}
+
+function closingSpeedMs(s: SimState): number {
+  const t = pathTarget(s);
   if (t.kind === "none") return 0;
   if (t.kind === "movingVehicle") return (s.speed - t.speed) / 3.6;
   return s.speed / 3.6;
@@ -177,7 +194,7 @@ export function assessAeb(s: SimState): AebAssessment {
     cancelledByDriver: false,
     ttc: Infinity,
   };
-  const t = s.target;
+  const t = pathTarget(s);
   if (!adasOperational(s) || !s.settings.aeb || s.faults.aeb || t.kind === "none") return none;
   if (!s.seatbelt || !s.doorClosed) return none;
 
@@ -256,7 +273,7 @@ export function evaluate(s: SimState): Derived {
   const conditions = accConditions(s);
   const ready = accReady(s);
   const following =
-    operational && s.acc.mode === "active" && s.target.kind === "movingVehicle" && s.target.distance < 150;
+    operational && s.acc.mode === "active" && pathTarget(s).kind === "movingVehicle" && s.target.distance < 150;
 
   const highBeam =
     s.ignitionOn &&
@@ -285,7 +302,7 @@ export function evaluate(s: SimState): Derived {
   const ldwWarn =
     operational && s.ldw === "active" && s.laneDeparture && s.turnSignal === "none" && !s.hazard;
 
-  const t = s.target;
+  const t = pathTarget(s);
   const timeGap =
     s.speed > 5 && (t.kind === "movingVehicle" || t.kind === "staticVehicle")
       ? t.distance / (s.speed / 3.6)
@@ -485,6 +502,16 @@ export function reduce(s: SimState, a: Action): SimState {
       return createInitialState(a.hasMaxDrive);
     case "load":
       return a.state;
+    case "steer":
+      return { ...s, steer: a.dir, evasiveSteer: a.dir !== 0 && s.speed > 1 };
+    case "clearTarget":
+      return {
+        ...s,
+        target: { kind: "none", distance: 80, speed: 40 },
+        collided: false,
+        aebStopped: false,
+        aeb: "idle",
+      };
     case "tripReset":
       return { ...s, trip: { km: 0, seconds: 0, liters: 0 } };
     case "reset":
@@ -570,16 +597,23 @@ function tick(prev: SimState, dt: number): SimState {
 
   // Alvo à frente.
   const t = s.target;
+  const inLane = inPath(s);
   let distance = t.distance;
   if (t.kind === "movingVehicle") distance += ((t.speed - speed) / 3.6) * dt;
   else if (t.kind === "staticVehicle" || t.kind === "pedestrian") distance -= (speed / 3.6) * dt;
   let collided = s.collided;
-  if (t.kind !== "none" && distance <= 0.5 && closingSpeedMs({ ...s, speed }) > 0) {
+  if (inLane && distance <= 0.5 && closingSpeedMs({ ...s, speed }) > 0) {
     collided = true;
     speed = 0;
     distance = 0.5;
   }
-  if (t.kind !== "none") distance = clamp(distance, 0.5, 400);
+  if (t.kind !== "none") distance = clamp(distance, inLane ? 0.5 : -80, 400);
+
+  // Posição lateral: o volante só faz efeito com o carro em movimento.
+  const lateralRate = clamp(speed / 25, 0, 1) * 2.4;
+  const lateral = clamp(s.lateral + s.steer * lateralRate * dt, -MAX_LATERAL, MAX_LATERAL);
+  const offset = lateral - Math.round(lateral / LANE_WIDTH) * LANE_WIDTH;
+  const laneDeparture = Math.abs(offset) > 0.85;
 
   // "aebStopped" fica ligado depois que o AEB freou, até o motorista agir.
   const aebActing = aeb.stage === "partial" || aeb.stage === "emergency";
@@ -598,6 +632,8 @@ function tick(prev: SimState, dt: number): SimState {
     ...s,
     speed,
     target: { ...t, distance },
+    lateral,
+    laneDeparture,
     collided,
     aebStopped,
     odo: s.odo + km,
@@ -607,7 +643,7 @@ function tick(prev: SimState, dt: number): SimState {
 
 function accControl(s: SimState): number {
   let targetSpeed = s.acc.setSpeed;
-  const t = s.target;
+  const t = pathTarget(s);
   if (t.kind === "movingVehicle") {
     const gap = desiredGapMeters(s);
     if (t.distance < gap * 3) {

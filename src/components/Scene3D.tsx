@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import type { ReactNode } from "react";
 import type { Derived } from "../engine/engine";
 import type { SimState } from "../engine/types";
 import { createWorld } from "../scene/world";
@@ -19,7 +20,18 @@ const SHOWN_LABEL: Record<ShownMode, string> = {
 };
 
 /** Visão 3D do carro, dos obstáculos e dos pedestres. Carregada sob demanda. */
-export default function Scene3D({ state, derived }: { state: SimState; derived: Derived }) {
+export default function Scene3D({
+  state,
+  derived,
+  variant = "panel",
+  children,
+}: {
+  state: SimState;
+  derived: Derived;
+  variant?: "panel" | "game";
+  children?: ReactNode;
+}) {
+  const game = variant === "game";
   const host = useRef<HTMLDivElement>(null);
   const layer = useRef<HTMLDivElement>(null);
   const world = useRef<World | null>(null);
@@ -108,9 +120,11 @@ export default function Scene3D({ state, derived }: { state: SimState; derived: 
   const activeHint = MODES.find((m) => m.id === mode)?.hint;
 
   return (
-    <section className="panel scene" aria-labelledby="scene-h">
-      <div className="scene-head">
-        <h2 id="scene-h">Veja o que o carro vê</h2>
+    <section className={game ? "scene scene-game" : "panel scene"} aria-labelledby="scene-h">
+      <div className={game ? "scene-head scene-head-game" : "scene-head"}>
+        <h2 id="scene-h" className={game ? "sr-only" : undefined}>
+          Veja o que o carro vê
+        </h2>
         <div className="seg" role="radiogroup" aria-label="Câmera da cena 3D">
           {MODES.map((m) => (
             <button
@@ -144,6 +158,7 @@ export default function Scene3D({ state, derived }: { state: SimState; derived: 
           aria-label="Cena 3D com seu carro, a pista, os outros veículos e pedestres. As mesmas informações aparecem em texto ao lado."
         />
         <div ref={layer} className="scene-labels" aria-hidden="true" />
+        {children}
         {failed ? (
           <p className="scene-fail">
             Não foi possível abrir a visão 3D neste navegador. O painel e os controles continuam funcionando.
@@ -163,11 +178,13 @@ export default function Scene3D({ state, derived }: { state: SimState; derived: 
         )}
       </div>
 
-      <p className="note">
-        {activeHint} Arraste para girar, dois toques para voltar. Formas e alcances das zonas são ilustrativos.
-      </p>
+      {game ? null : (
+        <p className="note">
+          {activeHint} Arraste para girar, dois toques para voltar. Formas e alcances das zonas são ilustrativos.
+        </p>
+      )}
 
-      <ul className="legend" aria-label="Legenda das cores">
+      <ul className={game ? "legend legend-game" : "legend"} aria-label="Legenda das cores">
         <li><i className="sw sw-blue" /> Sensor ligado, nada detectado</li>
         <li><i className="sw sw-green" /> Seguindo um carro / nível 1</li>
         <li><i className="sw sw-amber" /> Aviso</li>

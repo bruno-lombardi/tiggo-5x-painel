@@ -87,7 +87,7 @@ export function CarPanel({ state: s, dispatch, select }: Props) {
         <Switch label="Carro no ponto cego direito" checked={s.blind.right} onChange={(v) => set("blind", { ...s.blind, right: v })} onFocusId={() => select("bsd")} />
         <Switch label="Carro cruzando atrás, à esquerda" checked={s.cross.left} onChange={(v) => set("cross", { ...s.cross, left: v })} onFocusId={() => select("rcta")} />
         <Switch label="Carro cruzando atrás, à direita" checked={s.cross.right} onChange={(v) => set("cross", { ...s.cross, right: v })} onFocusId={() => select("rcta")} />
-        <Switch label="Saindo da faixa sem seta" checked={s.laneDeparture} onChange={(v) => set("laneDeparture", v)} onFocusId={() => select("ldw")} />
+        <Switch label="Saindo da faixa sem seta" checked={s.laneDeparture} onChange={(v) => set("lateral", v ? -1.05 : 0)} onFocusId={() => select("ldw")} />
         <Switch label="Via iluminada" checked={s.roadLit} onChange={(v) => set("roadLit", v)} onFocusId={() => select("ihc")} />
         <Switch label="Carro vindo em sentido contrário" checked={s.oncoming} onChange={(v) => set("oncoming", v)} onFocusId={() => select("ihc")} />
       </Group>

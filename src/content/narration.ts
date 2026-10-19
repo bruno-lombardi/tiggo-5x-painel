@@ -1,4 +1,4 @@
-import { assessAeb, LIMITS } from "../engine/engine";
+import { assessAeb, inPath, LIMITS } from "../engine/engine";
 import type { Derived } from "../engine/engine";
 import type { SimState } from "../engine/types";
 import { ACC_CONDITION_LABELS } from "./features";
@@ -21,7 +21,7 @@ export function narrate(s: SimState, d: Derived): Line[] {
   const push = (id: string, tone: Tone, text: string) => out.push({ id, tone, text });
 
   if (!s.ignitionOn) {
-    push("car", "info", "O carro está desligado. Toque em Ligar para começar.");
+    push("car", "info", "O carro está desligado. Ligue-o para começar.");
     return out;
   }
   if (!s.hasMaxDrive) {
@@ -44,7 +44,7 @@ export function narrate(s: SimState, d: Derived): Line[] {
   /* Colisão e AEB primeiro: é o que mais importa */
   const aeb = assessAeb(s);
   if (s.collided) {
-    push("aeb", "alert", "Colisão simulada. Use Reiniciar cenário para tentar de novo.");
+    push("aeb", "alert", "Colisão simulada. O carro parou; aguarde a pista liberar e tente de novo.");
   } else if (s.aeb === "emergency") {
     push("aeb", "alert", "AEB freando com força: o carro percebeu que você não ia conseguir parar a tempo.");
   } else if (s.aeb === "partial") {
@@ -60,6 +60,21 @@ export function narrate(s: SimState, d: Derived): Line[] {
         "aeb",
         "warn",
         `Você está a ${kmh(s.speed)}, acima de ${range} km/h. Para este tipo de alvo, o AEB só freia abaixo disso.`,
+      );
+    }
+  }
+  const tg = s.target;
+  if (tg.kind !== "none" && tg.distance > 0 && !s.collided) {
+    const what = tg.kind === "pedestrian" ? "Pedestre" : tg.kind === "staticVehicle" ? "Carro parado" : "Carro andando";
+    if (!inPath(s)) {
+      push("ahead", "info", `${what} na outra faixa, a ${Math.round(tg.distance)} m. Você não está na trajetória dele.`);
+    } else if (s.aeb === "idle" && !d.following) {
+      push(
+        "ahead",
+        "info",
+        tg.kind === "movingVehicle"
+          ? `Carro à frente, a ${Math.round(tg.distance)} m, a ${kmh(tg.speed)}.`
+          : `${what} na sua faixa, a ${Math.round(tg.distance)} m. Freie ou troque de faixa (seta + volante).`,
       );
     }
   }

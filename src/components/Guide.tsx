@@ -97,7 +97,10 @@ export function Coach(props: {
             <li key={st.id} className={`step step-${state}`} aria-current={state === "now" ? "step" : undefined}>
               <Check done={state === "done"} />
               <div>
-                <p>{st.text}</p>
+                <p>
+                  {st.text}
+                  {st.key ? <kbd className="step-key">{st.key}</kbd> : null}
+                </p>
                 {state === "now" && st.hint ? <p className="hint">{st.hint}</p> : null}
               </div>
             </li>
@@ -130,6 +133,7 @@ export function NowStep(props: { scenario: Scenario | null; progress: number }) 
     <p className={`now ${st ? "" : "now-done"}`} role="status">
       <span className="now-n">{st ? `Passo ${props.progress + 1} de ${sc.steps.length}` : "Concluído"}</span>
       {st ? st.text : "Veja o resumo no quadro da situação."}
+      {st?.key ? <kbd className="hud-key">{st.key}</kbd> : null}
     </p>
   );
 }

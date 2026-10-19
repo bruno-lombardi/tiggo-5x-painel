@@ -388,7 +388,7 @@ export const MESSAGES: Record<string, { text: string; tone: "info" | "warn" | "a
   aebWarn: { text: "Risco de colisão! Freie ou desvie.", tone: "alert" },
   aebActing: { text: "Frenagem automática em andamento.", tone: "alert" },
   aebStopped: { text: "Carro parado pelo AEB. Ele não fica retido: assuma o controle.", tone: "warn" },
-  collided: { text: "Colisão simulada. Use Reiniciar cenário para tentar de novo.", tone: "alert" },
+  collided: { text: "Colisão simulada. Aguarde a pista liberar ou reinicie.", tone: "alert" },
   espOff: { text: "ESP desligado: assistentes inoperantes.", tone: "warn" },
   ldwWarn: { text: "Saída de faixa sem seta.", tone: "warn" },
   fdmWarn: { text: "Distância curta do carro da frente.", tone: "warn" },

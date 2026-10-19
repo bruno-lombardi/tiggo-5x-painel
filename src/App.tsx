@@ -1,23 +1,40 @@
-import { Suspense, lazy, useCallback, useEffect, useMemo, useReducer, useState } from "react";
+import { Suspense, lazy, useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import { CarPanel } from "./components/CarPanel";
 import { Cluster } from "./components/Cluster";
 import type { ClusterPage } from "./components/Cluster";
 import { ConsolePanel, StalkPanel, WheelPanel } from "./components/Controls";
+import { DriveView, MissionMenu } from "./components/Drive";
 import { Coach, Feed, NowStep, ScenarioBar } from "./components/Guide";
 import { AccChecklist, Explainer } from "./components/Inspector";
-import { SCENARIOS, SCENARIO_BY_ID } from "./content/scenarios";
+import { SCENARIOS } from "./content/scenarios";
+import { createDirector, directorStep } from "./engine/director";
+import type { DirState } from "./engine/director";
 import { createInitialState, evaluate, reduce } from "./engine/engine";
+import { createBeeper } from "./input/audio";
+import { useController } from "./input/useController";
+import { useMission } from "./useMission";
+import { useStats } from "./useStats";
 
 const Scene3D = lazy(() => import("./components/Scene3D"));
 
+type Mode = "drive" | "lab";
+
 export function App() {
   const [state, dispatch] = useReducer(reduce, undefined, () => createInitialState(true));
+  const [mode, setMode] = useState<Mode>("drive");
   const [selected, setSelected] = useState("acc");
   const [page, setPage] = useState<ClusterPage>("adas");
-  const [scenarioId, setScenarioId] = useState<string | null>(null);
-  const [progress, setProgress] = useState(0);
+  const [started, setStarted] = useState(false);
+  const [sound, setSound] = useState(false);
   const select = useCallback((id: string) => setSelected(id), []);
 
+  const derived = useMemo(() => evaluate(state), [state]);
+  const stateRef = useRef(state);
+  const derivedRef = useRef(derived);
+  stateRef.current = state;
+  derivedRef.current = derived;
+
+  /* Relógio da simulação */
   useEffect(() => {
     let last = performance.now();
     const id = window.setInterval(() => {
@@ -29,89 +46,165 @@ export function App() {
     return () => window.clearInterval(id);
   }, []);
 
-  const derived = useMemo(() => evaluate(state), [state]);
-  const scenario = scenarioId ? SCENARIO_BY_ID[scenarioId] : null;
+  const mission = useMission(state, derived, dispatch, select);
+  const { controller, pressed } = useController(dispatch, state, true);
+  const stats = useStats(state);
 
-  const start = useCallback((id: string | null) => {
-    setScenarioId(id);
-    setProgress(0);
-    if (id) {
-      const sc = SCENARIO_BY_ID[id];
-      dispatch({ type: "load", state: sc.build() });
-      setSelected(sc.focus);
-      setPage("adas");
-    } else {
-      dispatch({ type: "reset" });
+  /* Trânsito automático na estrada livre */
+  const dirRef = useRef<DirState | null>(null);
+  const freeRoad = mode === "drive" && !mission.scenario && started;
+  useEffect(() => {
+    if (!freeRoad) {
+      dirRef.current = null;
+      return;
     }
+    dirRef.current = createDirector(stateRef.current.clock);
+    const id = window.setInterval(() => {
+      if (!dirRef.current) return;
+      const r = directorStep(stateRef.current, dirRef.current);
+      dirRef.current = r.dir;
+      r.actions.forEach((a) => dispatch(a));
+    }, 500);
+    return () => window.clearInterval(id);
+  }, [freeRoad]);
+
+  /* Som dos alertas */
+  const beeper = useRef<ReturnType<typeof createBeeper> | null>(null);
+  useEffect(() => {
+    beeper.current = createBeeper();
+    const id = window.setInterval(() => beeper.current?.update(stateRef.current, derivedRef.current), 100);
+    return () => {
+      window.clearInterval(id);
+      beeper.current?.dispose();
+    };
+  }, []);
+  const toggleSound = () => {
+    const next = !sound;
+    beeper.current?.setEnabled(next);
+    setSound(next);
+  };
+
+  const begin = useCallback(() => {
+    dispatch({ type: "reset" });
+    dispatch({ type: "ignition" });
+    dispatch({ type: "gear", gear: "D" });
+    dispatch({ type: "set", key: "parkingBrake", value: false });
+    dispatch({ type: "tripReset" });
+    setStarted(true);
   }, []);
 
-  /* Os passos se completam na ordem, assim que a condição é cumprida. */
-  useEffect(() => {
-    if (!scenario) return;
-    let i = progress;
-    while (i < scenario.steps.length && scenario.steps[i].done(state, derived)) i++;
-    if (i !== progress) setProgress(i);
-  }, [state, derived, scenario, progress]);
+  const startMission = useCallback(
+    (id: string | null) => {
+      mission.start(id);
+      setPage("adas");
+      if (id === null) setStarted(false);
+      else setStarted(true);
+      stats.reset();
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [mission.start],
+  );
 
-  const next = () => {
-    const idx = SCENARIOS.findIndex((s) => s.id === scenarioId);
-    start(SCENARIOS[(idx + 1) % SCENARIOS.length].id);
+  const nextMission = () => {
+    const idx = SCENARIOS.findIndex((s) => s.id === mission.scenarioId);
+    startMission(SCENARIOS[(idx + 1) % SCENARIOS.length].id);
   };
 
   return (
-    <div className="app">
-      <header className="top">
+    <div className={`app app-${mode}`}>
+      <header className={`top ${mode === "drive" ? "top-compact" : ""}`}>
         <div>
           <h1>Simulador do painel</h1>
           <p>
-            Aprenda, na prática, como o ACC, o AEB, o LDW, o ponto cego, o farol alto inteligente e a câmera 360° respondem
-            no Tiggo 5X Pro com Max Drive.
+            {mode === "drive"
+              ? "Dirija com o teclado e aprenda como o Max Drive do Tiggo 5X Pro reage no trânsito."
+              : "Monte qualquer situação com os controles e veja o resultado no painel e na cena 3D."}
           </p>
         </div>
-        <p className="badge">Projeto educacional, não oficial</p>
+        <div className="top-right">
+          {mode === "drive" ? (
+            <>
+              <MissionMenu scenarioId={mission.scenarioId} onPick={startMission} />
+              <button type="button" className="chip" aria-pressed={sound} onClick={toggleSound}>
+                Som: {sound ? "ligado" : "desligado"}
+              </button>
+            </>
+          ) : null}
+          <div className="seg" role="group" aria-label="Modo">
+            <button type="button" className={`seg-btn ${mode === "drive" ? "on" : ""}`} aria-pressed={mode === "drive"} onClick={() => setMode("drive")}>
+              Dirigir
+            </button>
+            <button type="button" className={`seg-btn ${mode === "lab" ? "on" : ""}`} aria-pressed={mode === "lab"} onClick={() => setMode("lab")}>
+              Laboratório
+            </button>
+          </div>
+          <p className="badge">Projeto educacional, não oficial</p>
+        </div>
       </header>
 
-      <ScenarioBar activeId={scenarioId} onPick={start} />
-      <Coach
-        scenario={scenario}
-        progress={progress}
-        onRestart={() => start(scenarioId)}
-        onNext={next}
-        onExplain={select}
-      />
-
-      <main className="layout">
-        <CarPanel state={state} dispatch={dispatch} select={select} />
-
-        <div className="center">
-          <div className="dash">
-            <Cluster state={state} derived={derived} selected={selected} select={select} page={page} />
-            <NowStep scenario={scenario} progress={progress} />
-          </div>
-          <Suspense fallback={<section className="panel scene scene-loading">Carregando a cena 3D…</section>}>
-            <Scene3D state={state} derived={derived} />
-          </Suspense>
-          <div className="controls">
-            <WheelPanel state={state} dispatch={dispatch} select={select} page={page} setPage={setPage} />
-            <StalkPanel state={state} dispatch={dispatch} select={select} />
-            <ConsolePanel state={state} dispatch={dispatch} select={select} />
-          </div>
-        </div>
-
-        <div className="side">
-          <Feed state={state} derived={derived} />
-          <AccChecklist state={state} derived={derived} />
-          <Explainer id={selected} />
-        </div>
-      </main>
+      {mode === "drive" ? (
+        <DriveView
+          state={state}
+          derived={derived}
+          dispatch={dispatch}
+          controller={controller}
+          pressed={pressed}
+          selected={selected}
+          select={select}
+          page={page}
+          setPage={setPage}
+          scenario={mission.scenario}
+          progress={mission.progress}
+          picked={mission.picked}
+          setPicked={mission.setPicked}
+          startMission={startMission}
+          nextMission={nextMission}
+          started={started}
+          begin={begin}
+          stats={stats}
+        />
+      ) : (
+        <>
+          <ScenarioBar activeId={mission.scenarioId} onPick={startMission} />
+          <Coach
+            scenario={mission.scenario}
+            progress={mission.progress}
+            onRestart={() => startMission(mission.scenarioId)}
+            onNext={nextMission}
+            onExplain={select}
+          />
+          <main className="layout">
+            <CarPanel state={state} dispatch={dispatch} select={select} />
+            <div className="center">
+              <div className="dash">
+                <Cluster state={state} derived={derived} selected={selected} select={select} page={page} />
+                <NowStep scenario={mission.scenario} progress={mission.progress} />
+              </div>
+              <Suspense fallback={<section className="panel scene scene-loading">Carregando a cena 3D…</section>}>
+                <Scene3D state={state} derived={derived} />
+              </Suspense>
+              <div className="controls">
+                <WheelPanel state={state} dispatch={dispatch} select={select} page={page} setPage={setPage} />
+                <StalkPanel state={state} dispatch={dispatch} select={select} />
+                <ConsolePanel state={state} dispatch={dispatch} select={select} />
+              </div>
+            </div>
+            <div className="side">
+              <Feed state={state} derived={derived} />
+              <AccChecklist state={state} derived={derived} />
+              <Explainer id={selected} />
+            </div>
+          </main>
+        </>
+      )}
 
       <footer className="legal">
         <p>
           Projeto independente, sem vínculo com a CAOA Chery nem com a Chery. Os textos são resumos em palavras próprias,
           feitos a partir da leitura do Manual do Proprietário do Tiggo 5X Pro. Não há imagens, logotipos ou trechos do
           manual aqui: o painel e a cena 3D são desenhos originais. As velocidades de ativação vêm do manual; os tempos de
-          reação, a física do carro, o formato das zonas dos sensores, a rotação, o combustível, o consumo e a autonomia
-          são ilustrativos. Em caso de dúvida, vale o manual do seu veículo.
+          reação, a física do carro, o formato das zonas dos sensores, o trânsito, os sons, a rotação, o combustível, o
+          consumo e a autonomia são ilustrativos. Em caso de dúvida, vale o manual do seu veículo.
         </p>
       </footer>
     </div>

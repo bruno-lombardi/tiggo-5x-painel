@@ -28,6 +28,8 @@ export interface Target {
   kind: TargetKind;
   /** metros até o alvo */
   distance: number;
+  /** faixa do alvo: -1 esquerda, 0 a sua, 1 direita (padrão 0) */
+  lane?: -1 | 0 | 1;
   /** km/h do alvo (só vale para veículo em movimento) */
   speed: number;
 }
@@ -74,6 +76,10 @@ export interface SimState {
   clock: number;
   /** cena noturna (só visual; ajuda a ver o farol alto) */
   night: boolean;
+  /** posição lateral do carro na pista, em metros (0 = centro da faixa do meio) */
+  lateral: number;
+  /** volante: -1 esquerda, 0 reto, 1 direita */
+  steer: -1 | 0 | 1;
   /** hodômetro total (km) e dados da viagem — consumo ILUSTRATIVO */
   odo: number;
   trip: { km: number; seconds: number; liters: number };
@@ -104,4 +110,6 @@ export type Action =
   | { type: "variant"; hasMaxDrive: boolean }
   | { type: "load"; state: SimState }
   | { type: "tripReset" }
+  | { type: "steer"; dir: -1 | 0 | 1 }
+  | { type: "clearTarget" }
   | { type: "reset" };

@@ -220,7 +220,7 @@ describe("LDW, ponto cego, farol alto e câmera 360°", () => {
   });
 
   it("LDW avisa ao cruzar a linha sem seta, e cala com seta ou pisca-alerta", () => {
-    let s = advance(driving(90, { laneDeparture: true }), 0.1);
+    let s = advance(driving(90, { lateral: -1.05 }), 0.1);
     expect(evaluate(s).ldwWarn).toBe(true);
     expect(evaluate({ ...s, turnSignal: "left" }).ldwWarn).toBe(false);
     expect(evaluate({ ...s, hazard: true }).ldwWarn).toBe(false);
@@ -285,5 +285,38 @@ describe("Estado geral", () => {
     s = run(s, { type: "ignition" });
     expect(s.ignitionOn).toBe(false);
     expect(s.acc.mode).toBe("off");
+  });
+});
+
+describe("volante e faixas", () => {
+  it("esterçar para a esquerda sem seta dispara o LDW; seta cala o aviso", () => {
+    let s = driving(90, { steer: -1 });
+    s = advance(s, 0.6);
+    expect(s.lateral).toBeLessThan(-0.85);
+    expect(evaluate(s).ldwWarn).toBe(true);
+    expect(evaluate({ ...s, turnSignal: "left" }).ldwWarn).toBe(false);
+  });
+
+  it("trocar de faixa completa a manobra sem alerta ao final", () => {
+    let s = driving(90, { steer: -1, turnSignal: "left" });
+    s = advance(s, 1.6);
+    expect(s.lateral).toBeLessThan(-3.2);
+    s = { ...s, steer: 0 };
+    s = advance(s, 0.1);
+    expect(s.laneDeparture).toBe(false);
+  });
+
+  it("carro parado na outra faixa não é alvo do AEB nem causa colisão", () => {
+    let s = driving(60, { lateral: -3.5, target: { kind: "staticVehicle", distance: 40, speed: 0 } });
+    s = advance(s, 6);
+    expect(s.collided).toBe(false);
+    expect(s.speed).toBeGreaterThan(40);
+    expect(s.aeb).toBe("idle");
+  });
+
+  it("carro parado na sua faixa continua sendo alvo", () => {
+    let s = driving(60, { target: { kind: "staticVehicle", distance: 40, speed: 0 } });
+    s = advance(s, 0.5);
+    expect(["warn", "partial", "emergency"]).toContain(s.aeb);
   });
 });

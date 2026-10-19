@@ -121,11 +121,10 @@ function makeCar(color: number): CarParts {
 
   const glassShape = new THREE.Shape();
   [
-    [-1.78, 1.1],
-    [-1.68, 1.54],
-    [0.3, 1.54],
-    [0.9, 1.24],
-    [0.9, 1.1],
+    [-2.13, 1.18],
+    [-1.92, 1.54],
+    [0.62, 1.54],
+    [1.12, 1.18],
   ].forEach(([x, y], i) => (i === 0 ? glassShape.moveTo(x, y) : glassShape.lineTo(x, y)));
   const glassGeo = new THREE.ExtrudeGeometry(glassShape, {
     depth: 1.66,
@@ -517,6 +516,7 @@ export function createWorld(host: HTMLElement, labelLayer: HTMLElement): World {
   let clock = 0;
   let nightK = 0;
   let ownX = 0;
+  let ownYaw = 0;
   let wheelSpin = 0;
   let yawOff = 0;
   let zoom = 1;
@@ -566,14 +566,16 @@ export function createWorld(host: HTMLElement, labelLayer: HTMLElement): World {
     for (const t of trees) t.obj.position.z = wrap(travel, t.i, 24);
 
     /* Seu carro e a saída de faixa */
-    const driftTarget = s.laneDeparture ? -0.95 : 0;
-    ownX += (driftTarget - ownX) * (1 - Math.exp(-dt * 2));
+    ownX += (s.lateral - ownX) * (1 - Math.exp(-dt * 12));
+    ownYaw += ((s.speed > 1 ? -s.steer * 0.07 : 0) - ownYaw) * (1 - Math.exp(-dt * 6));
     own.group.position.x = ownX;
-    own.group.rotation.y = (driftTarget - ownX) * 0.1;
+    own.group.rotation.y = ownYaw;
     for (const w of own.wheels) w.rotation.x = wheelSpin;
 
     const warnLdw = d.ldwWarn;
-    laneLeftMat.color.setHex(warnLdw && fastBlink ? AMBER : 0xf2f4f5);
+    const laneWarnColor = warnLdw && fastBlink ? AMBER : 0xf2f4f5;
+    laneLeftMat.color.setHex(laneWarnColor);
+    laneRightMat.color.setHex(laneWarnColor);
 
     const headLevel = s.ignitionOn ? (nightK > 0.4 || d.highBeam ? 1.4 : 0.35) : 0;
     const braking = s.brake || s.aeb === "partial" || s.aeb === "emergency";
@@ -603,6 +605,7 @@ export function createWorld(host: HTMLElement, labelLayer: HTMLElement): World {
     const t = s.target;
     const labels: LabelSpec[] = [];
     const tgtZ = -(CAR_HALF_LEN + t.distance);
+    const tgtX = (t.lane ?? 0) * 3.5;
     leadCar.group.visible = t.kind === "movingVehicle" || t.kind === "staticVehicle";
     walker.group.visible = t.kind === "pedestrian";
     targetRing.visible = t.kind !== "none";
@@ -617,7 +620,7 @@ export function createWorld(host: HTMLElement, labelLayer: HTMLElement): World {
     const ringColor = { alert: RED, warn: AMBER, ok: GREEN, info: 0xdfe8ec }[tone];
     (targetRing.material as THREE.MeshBasicMaterial).color.setHex(ringColor);
     if (leadCar.group.visible) {
-      leadCar.group.position.set(0, 0, tgtZ - 2.3);
+      leadCar.group.position.set(tgtX, 0, tgtZ - 2.3);
       for (const w of leadCar.wheels) w.rotation.x = wheelSpin * (t.kind === "movingVehicle" ? t.speed / Math.max(s.speed, 8) : 0);
       setCar(leadCar, {
         tail: t.kind === "staticVehicle" ? 0.7 : 0.8,
@@ -625,7 +628,7 @@ export function createWorld(host: HTMLElement, labelLayer: HTMLElement): World {
         turnR: t.kind === "staticVehicle" && blinkOn,
         head: 0,
       });
-      targetRing.position.set(0, 0.08, tgtZ - 2.3);
+      targetRing.position.set(tgtX, 0.08, tgtZ - 2.3);
       targetRing.scale.set(1.25, 1, 1.9);
       labels.push({
         id: "target",
@@ -633,23 +636,23 @@ export function createWorld(host: HTMLElement, labelLayer: HTMLElement): World {
           t.kind === "movingVehicle"
             ? `Carro a ${Math.round(t.speed)} km/h · ${Math.round(t.distance)} m${d.following ? " · seguido pelo ACC" : ""}`
             : `Carro parado · ${Math.round(t.distance)} m`,
-        pos: new THREE.Vector3(0, 2.4, tgtZ - 2.3),
+        pos: new THREE.Vector3(tgtX, 2.4, tgtZ - 2.3),
         tone,
       });
     }
     if (walker.group.visible) {
-      walker.group.position.set(0, 0, tgtZ - 0.2);
+      walker.group.position.set(tgtX, 0, tgtZ - 0.2);
       const sw = still ? 0 : Math.sin(clock * 5.5) * 0.5;
       walker.legL.rotation.x = sw;
       walker.legR.rotation.x = -sw;
       walker.armL.rotation.x = -sw * 0.8;
       walker.armR.rotation.x = sw * 0.8;
-      targetRing.position.set(0, 0.08, tgtZ - 0.2);
+      targetRing.position.set(tgtX, 0.08, tgtZ - 0.2);
       targetRing.scale.set(0.5, 1, 0.5);
       labels.push({
         id: "target",
         text: `Pedestre · ${Math.round(t.distance)} m`,
-        pos: new THREE.Vector3(0, 2.1, tgtZ - 0.2),
+        pos: new THREE.Vector3(tgtX, 2.1, tgtZ - 0.2),
         tone,
       });
     }
@@ -660,8 +663,8 @@ export function createWorld(host: HTMLElement, labelLayer: HTMLElement): World {
     /* Ponto cego, ré e farol */
     blindL.group.visible = s.blind.left;
     blindR.group.visible = s.blind.right;
-    blindL.group.position.set(-3.5, 0, 3.2);
-    blindR.group.position.set(3.5, 0, 3.2);
+    blindL.group.position.set(ownX - 3.5, 0, 3.2);
+    blindR.group.position.set(ownX + 3.5, 0, 3.2);
     for (const c of [blindL, blindR]) {
       for (const w of c.wheels) w.rotation.x = wheelSpin;
       setCar(c, { tail: 0.6 });
@@ -670,8 +673,8 @@ export function createWorld(host: HTMLElement, labelLayer: HTMLElement): World {
     const crossPhase = (clock * 5.5) % crossSpan;
     crossL.group.visible = s.cross.left;
     crossR.group.visible = s.cross.right;
-    crossL.group.position.set(-20 + crossPhase, 0, 9.5);
-    crossR.group.position.set(20 - crossPhase, 0, 15);
+    crossL.group.position.set(ownX - 20 + crossPhase, 0, 9.5);
+    crossR.group.position.set(ownX + 20 - crossPhase, 0, 15);
     for (const c of [crossL, crossR]) {
       for (const w of c.wheels) w.rotation.x = clock * 8;
       setCar(c, { tail: 0.7, head: 0.5 });
@@ -701,7 +704,7 @@ export function createWorld(host: HTMLElement, labelLayer: HTMLElement): World {
         labels.push({
           id: "gap",
           text: `Distância do ACC · ${Math.round(gz)} m`,
-          pos: new THREE.Vector3(ownX + 2.2, 0.3, -(CAR_HALF_LEN + gz)),
+          pos: new THREE.Vector3(ownX - 3.2, 0.3, -(CAR_HALF_LEN + gz)),
           tone: "ok",
         });
       }
@@ -710,10 +713,12 @@ export function createWorld(host: HTMLElement, labelLayer: HTMLElement): World {
       if (aebZone.visible) {
         const len = Math.max(t.distance, 0.5);
         aebZone.scale.z = len;
-        aebZone.position.set(0, 0.075, -(CAR_HALF_LEN + len / 2));
+        aebZone.position.set(ownX, 0.075, -(CAR_HALF_LEN + len / 2));
         aebMat.opacity = fastBlink ? 0.36 : 0.18;
       }
 
+      bsdL.position.x = ownX - 3.5;
+      bsdR.position.x = ownX + 3.5;
       const bsdOn = md && s.bsd !== "off";
       bsdL.visible = bsdR.visible = bsdOn;
       const paintBsd = (mat: THREE.MeshBasicMaterial, lvl: 0 | 1 | 2) => {
@@ -723,7 +728,7 @@ export function createWorld(host: HTMLElement, labelLayer: HTMLElement): World {
       paintBsd(bsdMatL, d.bsdWarn.left);
       paintBsd(bsdMatR, d.bsdWarn.right);
       if (bsdOn) {
-        labels.push({ id: "bsdL", text: "Zona do ponto cego", pos: new THREE.Vector3(-3.5, 0.5, 6.5), tone: d.bsdWarn.left ? "warn" : "info" });
+        labels.push({ id: "bsdL", text: "Zona do ponto cego", pos: new THREE.Vector3(ownX - 3.5, 0.5, 6.5), tone: d.bsdWarn.left ? "warn" : "info" });
       }
 
       const rctaOn = md && s.gear === "R" && s.settings.bsd;
@@ -743,7 +748,7 @@ export function createWorld(host: HTMLElement, labelLayer: HTMLElement): World {
       avmZone.position.x = ownX;
 
       if (md && d.operational) {
-        labels.push({ id: "radar", text: "Radar e câmera da frente", pos: new THREE.Vector3(ownX + 7, 0.3, -20), tone: "info" });
+        labels.push({ id: "radar", text: "Radar e câmera da frente", pos: new THREE.Vector3(ownX + 8, 0.3, -24), tone: "info" });
       }
     }
 
@@ -757,10 +762,10 @@ export function createWorld(host: HTMLElement, labelLayer: HTMLElement): World {
     }
     if (s.cross.left) labels.push({ id: "crossL", text: "Cruzando atrás", pos: new THREE.Vector3(crossL.group.position.x, 2.2, 9.5), tone: d.rctaWarn.left ? "alert" : "info" });
     if (s.cross.right) labels.push({ id: "crossR", text: "Cruzando atrás", pos: new THREE.Vector3(crossR.group.position.x, 2.2, 15), tone: d.rctaWarn.right ? "alert" : "info" });
-    if (s.blind.left) labels.push({ id: "blL", text: "Carro no ponto cego", pos: new THREE.Vector3(-3.5, 2.2, 3.2), tone: d.bsdWarn.left === 2 ? "alert" : d.bsdWarn.left === 1 ? "warn" : "info" });
-    if (s.blind.right) labels.push({ id: "blR", text: "Carro no ponto cego", pos: new THREE.Vector3(3.5, 2.2, 3.2), tone: d.bsdWarn.right === 2 ? "alert" : d.bsdWarn.right === 1 ? "warn" : "info" });
+    if (s.blind.left) labels.push({ id: "blL", text: "Carro no ponto cego", pos: new THREE.Vector3(ownX - 3.5, 2.2, 3.2), tone: d.bsdWarn.left === 2 ? "alert" : d.bsdWarn.left === 1 ? "warn" : "info" });
+    if (s.blind.right) labels.push({ id: "blR", text: "Carro no ponto cego", pos: new THREE.Vector3(ownX + 3.5, 2.2, 3.2), tone: d.bsdWarn.right === 2 ? "alert" : d.bsdWarn.right === 1 ? "warn" : "info" });
     if (d.highBeam) labels.push({ id: "hb", text: "Farol alto ligado", pos: new THREE.Vector3(ownX, 0.4, -40), tone: "info" });
-    if (warnLdw) labels.push({ id: "ldw", text: "Saindo da faixa", pos: new THREE.Vector3(-1.8, 0.8, -6), tone: "warn" });
+    if (warnLdw) labels.push({ id: "ldw", text: "Saindo da faixa", pos: new THREE.Vector3(ownX - 3.4, 1.4, -1), tone: "warn" });
     labels.push({ id: "own", text: "Seu carro", pos: new THREE.Vector3(ownX, 2.1, 0), tone: "info" });
 
     /* Câmera */
@@ -773,8 +778,8 @@ export function createWorld(host: HTMLElement, labelLayer: HTMLElement): World {
     const cy = Math.cos(yawOff);
     const sy = Math.sin(yawOff);
     if (mode === "chase") {
-      wantPos.set(ownX * 0.6 + sy * 11.5 * zoom, 5.0, cy * 11.5 * zoom);
-      wantLook.set(ownX * 0.5, 0.9, -14);
+      wantPos.set(ownX * 0.85 + sy * 11.5 * zoom, 5.0, cy * 11.5 * zoom);
+      wantLook.set(ownX * 0.8, 0.9, -14);
     } else if (mode === "top") {
       wantPos.set(sy * 8, 34 * zoom, 4 + cy * 8);
       wantLook.set(0, 0, -6);
