@@ -30,6 +30,8 @@ export interface Target {
   distance: number;
   /** faixa do alvo: -1 esquerda, 0 a sua, 1 direita (padrão 0) */
   lane?: -1 | 0 | 1;
+  /** aparência (só visual): carro, caminhão ou estilo do pedestre */
+  variant?: number;
   /** km/h do alvo (só vale para veículo em movimento) */
   speed: number;
 }

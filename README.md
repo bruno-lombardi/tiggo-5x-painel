@@ -53,7 +53,7 @@ npm run verify     # verificação legal + testes + build
 | `src/input` | Controle único (teclado e botões na tela) e bipes opcionais dos alertas. |
 | `src/content` | Textos explicativos e mensagens do painel. |
 | `src/components` | Painel em SVG (dois mostradores, tela central com páginas Assistência e Viagem), controles, treinador e lista "O que está acontecendo". |
-| `src/scene` | Cena 3D com three.js (carregada sob demanda), toda modelada em código, sem modelos nem texturas externos. |
+| `src/scene` | Cena 3D com three.js (carregada sob demanda), toda modelada em código: carro, caminhão, pedestres, relevo, árvores, placas e postes, com texturas geradas em canvas, sombras, céu com sol e estrelas e brilho (bloom). Sem modelos, texturas nem imagens externas. O botão “Gráficos” alterna Leve, Normal e Alta (o simulador reduz sozinho se ficar lento; `?q=0|1|2` força um nível). |
 | `scripts` | Verificação de direitos autorais. |
 
 ## O que é fiel ao manual e o que é ilustrativo

@@ -1,6 +1,13 @@
 import * as THREE from "three";
 import type { Derived } from "../engine/engine";
 import type { SimState } from "../engine/types";
+import { EffectComposer } from "three/addons/postprocessing/EffectComposer.js";
+import { RenderPass } from "three/addons/postprocessing/RenderPass.js";
+import { UnrealBloomPass } from "three/addons/postprocessing/UnrealBloomPass.js";
+import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
+import { createEnvironment } from "./environment";
+import { makeCar, makeTruck, makeWalker } from "./models";
+import type { CarParts } from "./models";
 
 /**
  * Cena 3D do simulador. Tudo é modelado aqui, com formas simples, sem texturas
@@ -20,7 +27,11 @@ export interface WorldInput {
   reduced: boolean;
 }
 
+export type Quality = 0 | 1 | 2;
+
 export interface World {
+  setQuality(q: Quality): void;
+  quality(): Quality;
   update(input: WorldInput, dt: number): void;
   resize(w: number, h: number): void;
   nudge(dYaw: number, dZoom: number): void;
@@ -38,10 +49,6 @@ const CAR_HALF_LEN = 2.3;
 /* ------------------------------------------------------------------ */
 /* Peças                                                               */
 /* ------------------------------------------------------------------ */
-
-function glow(color: number) {
-  return new THREE.MeshStandardMaterial({ color: 0x222222, emissive: color, emissiveIntensity: 0, roughness: 0.4 });
-}
 
 function zoneMaterial(color: number, opacity: number) {
   return new THREE.MeshBasicMaterial({
@@ -77,174 +84,6 @@ function fan(radius: number, half: number, centerAngle: number, material: THREE.
   return m;
 }
 
-interface CarParts {
-  group: THREE.Group;
-  head: THREE.MeshStandardMaterial;
-  tail: THREE.MeshStandardMaterial;
-  turnL: THREE.MeshStandardMaterial;
-  turnR: THREE.MeshStandardMaterial;
-  reverse: THREE.MeshStandardMaterial;
-  wheels: THREE.Object3D[];
-}
-
-/** SUV compacto simplificado, desenhado do zero com um perfil lateral extrudado. */
-function makeCar(color: number): CarParts {
-  const group = new THREE.Group();
-  const bodyMat = new THREE.MeshStandardMaterial({ color, roughness: 0.4, metalness: 0.08 });
-  const glassMat = new THREE.MeshStandardMaterial({ color: 0x0d1419, roughness: 0.08, metalness: 0.7 });
-  const darkMat = new THREE.MeshStandardMaterial({ color: 0x15191c, roughness: 0.8 });
-
-  const profile = [
-    [-2.25, 0.35],
-    [-2.28, 0.95],
-    [-2.1, 1.15],
-    [-1.75, 1.62],
-    [0.35, 1.62],
-    [1.05, 1.2],
-    [2.0, 1.02],
-    [2.25, 0.86],
-    [2.28, 0.5],
-    [2.2, 0.34],
-  ];
-  const body = new THREE.Shape();
-  profile.forEach(([x, y], i) => (i === 0 ? body.moveTo(x, y) : body.lineTo(x, y)));
-  const bodyGeo = new THREE.ExtrudeGeometry(body, {
-    depth: 1.64,
-    bevelEnabled: true,
-    bevelSize: 0.08,
-    bevelThickness: 0.1,
-    bevelSegments: 3,
-  });
-  bodyGeo.translate(0, 0, -0.82);
-  bodyGeo.rotateY(Math.PI / 2);
-  group.add(new THREE.Mesh(bodyGeo, bodyMat));
-
-  const glassShape = new THREE.Shape();
-  [
-    [-2.13, 1.18],
-    [-1.92, 1.54],
-    [0.62, 1.54],
-    [1.12, 1.18],
-  ].forEach(([x, y], i) => (i === 0 ? glassShape.moveTo(x, y) : glassShape.lineTo(x, y)));
-  const glassGeo = new THREE.ExtrudeGeometry(glassShape, {
-    depth: 1.66,
-    bevelEnabled: true,
-    bevelSize: 0.02,
-    bevelThickness: 0.1,
-    bevelSegments: 1,
-  });
-  glassGeo.translate(0, 0, -0.83);
-  glassGeo.rotateY(Math.PI / 2);
-  group.add(new THREE.Mesh(glassGeo, glassMat));
-
-  const under = new THREE.Mesh(new THREE.BoxGeometry(1.7, 0.3, 4.4), darkMat);
-  under.position.y = 0.32;
-  group.add(under);
-
-  const grille = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.2, 0.06), darkMat);
-  grille.position.set(0, 0.62, -2.37);
-  group.add(grille);
-
-  const head = glow(0xfff1c2);
-  const tail = glow(0xff2a20);
-  const turnL = glow(0xffa11a);
-  const turnR = glow(0xffa11a);
-  const reverse = glow(0xffffff);
-
-  for (const sx of [-1, 1]) {
-    const h = new THREE.Mesh(new THREE.BoxGeometry(0.36, 0.1, 0.08), head);
-    h.position.set(sx * 0.62, 0.8, -2.36);
-    group.add(h);
-    const t = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.12, 0.08), tail);
-    t.position.set(sx * 0.66, 0.86, 2.36);
-    group.add(t);
-    const tf = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.08, 0.08), sx < 0 ? turnL : turnR);
-    tf.position.set(sx * 0.8, 0.68, -2.34);
-    group.add(tf);
-    const tr = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.08, 0.08), sx < 0 ? turnL : turnR);
-    tr.position.set(sx * 0.8, 0.7, 2.36);
-    group.add(tr);
-    const rv = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.07, 0.08), reverse);
-    rv.position.set(sx * 0.36, 0.62, 2.37);
-    group.add(rv);
-    const mirror = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.12, 0.22), bodyMat);
-    mirror.position.set(sx * 1.0, 1.12, -0.8);
-    group.add(mirror);
-  }
-
-  const wheels: THREE.Object3D[] = [];
-  const tireMat = new THREE.MeshStandardMaterial({ color: 0x0c0d0e, roughness: 0.9 });
-  const rimMat = new THREE.MeshStandardMaterial({ color: 0xaab4ba, roughness: 0.3, metalness: 0.8 });
-  for (const sx of [-1, 1]) {
-    for (const z of [-1.42, 1.38]) {
-      const w = new THREE.Group();
-      const tire = new THREE.Mesh(new THREE.CylinderGeometry(0.36, 0.36, 0.26, 20), tireMat);
-      tire.rotation.z = Math.PI / 2;
-      const rim = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.22, 0.27, 6), rimMat);
-      rim.rotation.z = Math.PI / 2;
-      w.add(tire, rim);
-      const holder = new THREE.Group();
-      holder.position.set(sx * 0.8, 0.36, z);
-      holder.add(w);
-      group.add(holder);
-      wheels.push(w);
-    }
-  }
-  return { group, head, tail, turnL, turnR, reverse, wheels };
-}
-
-interface Walker {
-  group: THREE.Group;
-  legL: THREE.Object3D;
-  legR: THREE.Object3D;
-  armL: THREE.Object3D;
-  armR: THREE.Object3D;
-}
-
-function makeWalker(): Walker {
-  const group = new THREE.Group();
-  const vest = new THREE.MeshStandardMaterial({ color: 0xff7a1a, roughness: 0.7 });
-  const pants = new THREE.MeshStandardMaterial({ color: 0x2a3550, roughness: 0.8 });
-  const skin = new THREE.MeshStandardMaterial({ color: 0xd9a07a, roughness: 0.7 });
-
-  const torso = new THREE.Mesh(new THREE.BoxGeometry(0.44, 0.66, 0.26), vest);
-  torso.position.y = 1.2;
-  const head = new THREE.Mesh(new THREE.SphereGeometry(0.13, 16, 12), skin);
-  head.position.y = 1.64;
-  group.add(torso, head);
-
-  const limb = (w: number, h: number, mat: THREE.Material, x: number, y: number) => {
-    const pivot = new THREE.Group();
-    pivot.position.set(x, y, 0);
-    const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, w), mat);
-    m.position.y = -h / 2;
-    pivot.add(m);
-    group.add(pivot);
-    return pivot;
-  };
-  const legL = limb(0.16, 0.86, pants, -0.12, 0.88);
-  const legR = limb(0.16, 0.86, pants, 0.12, 0.88);
-  const armL = limb(0.11, 0.6, vest, -0.29, 1.5);
-  const armR = limb(0.11, 0.6, vest, 0.29, 1.5);
-  return { group, legL, legR, armL, armR };
-}
-
-function makeTree(): THREE.Group {
-  const g = new THREE.Group();
-  const trunk = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.18, 0.24, 1.6, 8),
-    new THREE.MeshStandardMaterial({ color: 0x5a4636, roughness: 0.9 }),
-  );
-  trunk.position.y = 0.8;
-  const top = new THREE.Mesh(
-    new THREE.ConeGeometry(1.4, 3.8, 10),
-    new THREE.MeshStandardMaterial({ color: 0x3f7d55, roughness: 0.85 }),
-  );
-  top.position.y = 3.3;
-  g.add(trunk, top);
-  return g;
-}
-
 /* ------------------------------------------------------------------ */
 /* Mundo                                                               */
 /* ------------------------------------------------------------------ */
@@ -256,116 +95,77 @@ interface LabelSpec {
   tone: "ok" | "info" | "warn" | "alert";
 }
 
-const WRAP_LEN = 204;
-const WRAP_START = -174;
-const PERIOD = 12;
-
-const wrap = (offset: number, i: number, period = PERIOD) => {
-  const v = (((i * period + offset) % WRAP_LEN) + WRAP_LEN) % WRAP_LEN;
-  return WRAP_START + v;
-};
-
 export function createWorld(host: HTMLElement, labelLayer: HTMLElement): World {
   const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false, powerPreference: "high-performance" });
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  renderer.setPixelRatio(dpr);
   renderer.setSize(host.clientWidth || 640, host.clientHeight || 360, false);
   renderer.domElement.className = "scene-canvas";
+  renderer.outputColorSpace = THREE.SRGBColorSpace;
+  renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  renderer.toneMappingExposure = 0.65;
+  renderer.shadowMap.enabled = true;
+  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
   host.appendChild(renderer.domElement);
 
   const scene = new THREE.Scene();
-  const daySky = new THREE.Color(0xbcd6e4);
-  const nightSky = new THREE.Color(0x070c12);
-  scene.background = daySky.clone();
-  scene.fog = new THREE.Fog(daySky.clone(), 70, 230);
+  const camera = new THREE.PerspectiveCamera(46, (host.clientWidth || 640) / (host.clientHeight || 360), 0.3, 1500);
 
-  const camera = new THREE.PerspectiveCamera(46, (host.clientWidth || 640) / (host.clientHeight || 360), 0.1, 400);
+  const env = createEnvironment(scene, renderer);
+  const { laneLeftMat, laneRightMat } = env;
 
-  const hemi = new THREE.HemisphereLight(0xffffff, 0x6d7f66, 1.0);
-  const sun = new THREE.DirectionalLight(0xffffff, 1.5);
-  sun.position.set(-30, 50, 20);
-  scene.add(hemi, sun);
+  /* Pós-processamento (só na qualidade Alta) */
+  let composer: EffectComposer | null = null;
+  let bloom: UnrealBloomPass | null = null;
+  const buildComposer = () => {
+    const size = renderer.getSize(new THREE.Vector2());
+    const rt = new THREE.WebGLRenderTarget(size.x * dpr, size.y * dpr, { type: THREE.HalfFloatType, samples: 4 });
+    composer = new EffectComposer(renderer, rt);
+    composer.setPixelRatio(dpr);
+    composer.setSize(size.x, size.y);
+    composer.addPass(new RenderPass(scene, camera));
+    bloom = new UnrealBloomPass(new THREE.Vector2(size.x, size.y), 0.3, 0.5, 1.15);
+    composer.addPass(bloom);
+    composer.addPass(new OutputPass());
+  };
 
-  /* Terreno e pista */
-  const grassMat = new THREE.MeshStandardMaterial({ color: 0x7a9a72, roughness: 1 });
-  const grass = new THREE.Mesh(new THREE.PlaneGeometry(400, 420), grassMat);
-  grass.rotation.x = -Math.PI / 2;
-  grass.position.set(0, -0.02, -90);
-  scene.add(grass);
-
-  const asphalt = new THREE.MeshStandardMaterial({ color: 0x3a434a, roughness: 0.95 });
-  const road = new THREE.Mesh(new THREE.PlaneGeometry(11.4, 420), asphalt);
-  road.rotation.x = -Math.PI / 2;
-  road.position.set(0, 0, -90);
-  scene.add(road);
-
-  const oncomingRoad = new THREE.Mesh(new THREE.PlaneGeometry(7.4, 420), asphalt);
-  oncomingRoad.rotation.x = -Math.PI / 2;
-  oncomingRoad.position.set(-11.5, 0, -90);
-  scene.add(oncomingRoad);
-
-  const barrier = new THREE.Mesh(
-    new THREE.BoxGeometry(0.5, 0.8, 420),
-    new THREE.MeshStandardMaterial({ color: 0x9aa4a9, roughness: 0.8 }),
-  );
-  barrier.position.set(-7.0, 0.4, -90);
-  scene.add(barrier);
-
-  const edgeMat = new THREE.MeshBasicMaterial({ color: 0xe8edf0 });
-  for (const x of [-5.4, 5.4, -14.8]) {
-    const edge = new THREE.Mesh(new THREE.PlaneGeometry(0.16, 420), edgeMat);
-    edge.rotation.x = -Math.PI / 2;
-    edge.position.set(x, 0.015, -90);
-    scene.add(edge);
-  }
-
-  /* Faixas tracejadas (rolam com a velocidade) */
-  const laneLeftMat = new THREE.MeshBasicMaterial({ color: 0xf2f4f5 });
-  const laneRightMat = new THREE.MeshBasicMaterial({ color: 0xf2f4f5 });
-  const dashes: { mesh: THREE.Mesh; i: number }[] = [];
-  const dashGeo = new THREE.PlaneGeometry(0.16, 4);
-  dashGeo.rotateX(-Math.PI / 2);
-  for (const [x, mat] of [
-    [-1.8, laneLeftMat],
-    [1.8, laneRightMat],
-  ] as const) {
-    for (let i = 0; i < WRAP_LEN / PERIOD; i++) {
-      const m = new THREE.Mesh(dashGeo, mat);
-      m.position.set(x, 0.02, 0);
-      scene.add(m);
-      dashes.push({ mesh: m, i });
+  let q: Quality = 2;
+  const urlQ = new URLSearchParams(typeof location !== "undefined" ? location.search : "").get("q");
+  if (urlQ === "0" || urlQ === "1" || urlQ === "2") q = Number(urlQ) as Quality;
+  const lockQ = urlQ !== null;
+  const applyQuality = () => {
+    env.setShadows(q === 0 ? 0 : q === 1 ? 1 : 2);
+    renderer.shadowMap.enabled = q > 0;
+    renderer.setPixelRatio(q === 0 ? 1 : dpr);
+    renderer.setSize(width, height, false);
+    if (q === 2) {
+      if (!composer) buildComposer();
+      else {
+        composer.setSize(width, height);
+      }
     }
-  }
-  const oncomingDashes: { mesh: THREE.Mesh; i: number }[] = [];
-  for (let i = 0; i < WRAP_LEN / PERIOD; i++) {
-    const m = new THREE.Mesh(dashGeo, edgeMat);
-    m.position.set(-11.5, 0.02, 0);
-    scene.add(m);
-    oncomingDashes.push({ mesh: m, i });
-  }
-
-  /* Árvores nas laterais */
-  const trees: { obj: THREE.Group; i: number }[] = [];
-  for (let i = 0; i < WRAP_LEN / 24; i++) {
-    for (const x of [9.5, -17.5]) {
-      const t = makeTree();
-      t.position.x = x + (i % 2 ? 1.2 : -0.6);
-      t.scale.setScalar(0.85 + ((i * 7) % 5) * 0.08);
-      scene.add(t);
-      trees.push({ obj: t, i: i + (x > 0 ? 0 : 0.5) });
-    }
-  }
+    scene.traverse((o) => {
+      const m = (o as THREE.Mesh).material as THREE.Material | THREE.Material[] | undefined;
+      if (Array.isArray(m)) m.forEach((x) => (x.needsUpdate = true));
+      else if (m) m.needsUpdate = true;
+    });
+  };
 
   /* Seu carro */
   const own = makeCar(0xe9eef1);
+  const shadowize = (g: THREE.Object3D) => g.traverse((o) => { if ((o as THREE.Mesh).isMesh) { o.castShadow = true; } });
+  shadowize(own.group);
   scene.add(own.group);
 
   /* Alvos */
   const leadCar = makeCar(0x4a6f8a);
-  leadCar.group.visible = false;
-  scene.add(leadCar.group);
-  const walker = makeWalker();
-  walker.group.visible = false;
-  scene.add(walker.group);
+  const leadTruck = makeTruck();
+  const walkers = [makeWalker(0), makeWalker(1), makeWalker(2)];
+  for (const g of [leadCar.group, leadTruck.group, ...walkers.map((w) => w.group)]) {
+    g.visible = false;
+    shadowize(g);
+    scene.add(g);
+  }
 
   const targetRing = new THREE.Mesh(
     (() => {
@@ -390,6 +190,7 @@ export function createWorld(host: HTMLElement, labelLayer: HTMLElement): World {
   oncomingCar.group.rotation.y = Math.PI;
   for (const c of [blindL, blindR, crossL, crossR, oncomingCar]) {
     c.group.visible = false;
+    shadowize(c.group);
     scene.add(c.group);
   }
 
@@ -518,8 +319,9 @@ export function createWorld(host: HTMLElement, labelLayer: HTMLElement): World {
   let ownX = 0;
   let ownYaw = 0;
   let wheelSpin = 0;
+  let slow = 0;
   let yawOff = 0;
-  let zoom = 1;
+  let zoom = Number(new URLSearchParams(typeof location !== "undefined" ? location.search : "").get("z")) || 1;
   let shown: ShownMode = "chase";
   const camPos = new THREE.Vector3(0, 4.5, 10.5);
   const camLook = new THREE.Vector3(0, 1.2, -14);
@@ -554,16 +356,7 @@ export function createWorld(host: HTMLElement, labelLayer: HTMLElement): World {
 
     /* Dia e noite */
     nightK += ((s.night ? 1 : 0) - nightK) * (1 - Math.exp(-dt * 3));
-    (scene.background as THREE.Color).copy(daySky).lerp(nightSky, nightK);
-    (scene.fog as THREE.Fog).color.copy(scene.background as THREE.Color);
-    hemi.intensity = 1.0 - nightK * 0.6;
-    sun.intensity = 1.5 - nightK * 1.42;
-    grassMat.color.setHex(0x7a9a72).multiplyScalar(1 - nightK * 0.35);
-
-    /* Cenário rolando */
-    for (const d1 of dashes) d1.mesh.position.z = wrap(travel, d1.i);
-    for (const d1 of oncomingDashes) d1.mesh.position.z = wrap(travel, d1.i);
-    for (const t of trees) t.obj.position.z = wrap(travel, t.i, 24);
+    env.update({ travel, nightK, ownX, dt, clock, still });
 
     /* Seu carro e a saída de faixa */
     ownX += (s.lateral - ownX) * (1 - Math.exp(-dt * 12));
@@ -573,7 +366,7 @@ export function createWorld(host: HTMLElement, labelLayer: HTMLElement): World {
     for (const w of own.wheels) w.rotation.x = wheelSpin;
 
     const warnLdw = d.ldwWarn;
-    const laneWarnColor = warnLdw && fastBlink ? AMBER : 0xf2f4f5;
+    const laneWarnColor = warnLdw && fastBlink ? AMBER : 0xd9dcde;
     laneLeftMat.color.setHex(laneWarnColor);
     laneRightMat.color.setHex(laneWarnColor);
 
@@ -591,7 +384,7 @@ export function createWorld(host: HTMLElement, labelLayer: HTMLElement): World {
 
     /* Luz dos faróis */
     const lightsOn = s.ignitionOn && nightK > 0.3;
-    spot.intensity = lightsOn ? 900 : 0;
+    spot.intensity = lightsOn ? 1400 : 0;
     spot.angle = d.highBeam ? 0.3 : 0.55;
     spot.distance = d.highBeam ? 140 : 55;
     spot.position.x = ownX;
@@ -606,8 +399,12 @@ export function createWorld(host: HTMLElement, labelLayer: HTMLElement): World {
     const labels: LabelSpec[] = [];
     const tgtZ = -(CAR_HALF_LEN + t.distance);
     const tgtX = (t.lane ?? 0) * 3.5;
-    leadCar.group.visible = t.kind === "movingVehicle" || t.kind === "staticVehicle";
-    walker.group.visible = t.kind === "pedestrian";
+    const isVeh = t.kind === "movingVehicle" || t.kind === "staticVehicle";
+    const lead = t.kind === "movingVehicle" && t.variant === 1 ? leadTruck : leadCar;
+    leadCar.group.visible = isVeh && lead === leadCar;
+    leadTruck.group.visible = isVeh && lead === leadTruck;
+    const walker = walkers[Math.abs(t.variant ?? 0) % walkers.length];
+    walkers.forEach((w) => (w.group.visible = t.kind === "pedestrian" && w === walker));
     targetRing.visible = t.kind !== "none";
     const tone: LabelSpec["tone"] =
       s.collided || s.aeb === "partial" || s.aeb === "emergency"
@@ -619,34 +416,31 @@ export function createWorld(host: HTMLElement, labelLayer: HTMLElement): World {
             : "info";
     const ringColor = { alert: RED, warn: AMBER, ok: GREEN, info: 0xdfe8ec }[tone];
     (targetRing.material as THREE.MeshBasicMaterial).color.setHex(ringColor);
-    if (leadCar.group.visible) {
-      leadCar.group.position.set(tgtX, 0, tgtZ - 2.3);
-      for (const w of leadCar.wheels) w.rotation.x = wheelSpin * (t.kind === "movingVehicle" ? t.speed / Math.max(s.speed, 8) : 0);
-      setCar(leadCar, {
+    if (isVeh) {
+      const hl = lead.halfLen;
+      lead.group.position.set(tgtX, 0, tgtZ - hl);
+      for (const w of lead.wheels) w.rotation.x = wheelSpin * (t.kind === "movingVehicle" ? t.speed / Math.max(s.speed, 8) : 0);
+      setCar(lead, {
         tail: t.kind === "staticVehicle" ? 0.7 : 0.8,
         turnL: t.kind === "staticVehicle" && blinkOn,
         turnR: t.kind === "staticVehicle" && blinkOn,
         head: 0,
       });
-      targetRing.position.set(tgtX, 0.08, tgtZ - 2.3);
-      targetRing.scale.set(1.25, 1, 1.9);
+      targetRing.position.set(tgtX, 0.08, tgtZ - hl);
+      targetRing.scale.set(1.25, 1, hl * 0.83);
       labels.push({
         id: "target",
         text:
           t.kind === "movingVehicle"
             ? `Carro a ${Math.round(t.speed)} km/h · ${Math.round(t.distance)} m${d.following ? " · seguido pelo ACC" : ""}`
             : `Carro parado · ${Math.round(t.distance)} m`,
-        pos: new THREE.Vector3(tgtX, 2.4, tgtZ - 2.3),
+        pos: new THREE.Vector3(tgtX, lead === leadTruck ? 3.8 : 2.4, tgtZ - hl),
         tone,
       });
     }
-    if (walker.group.visible) {
+    if (t.kind === "pedestrian") {
       walker.group.position.set(tgtX, 0, tgtZ - 0.2);
-      const sw = still ? 0 : Math.sin(clock * 5.5) * 0.5;
-      walker.legL.rotation.x = sw;
-      walker.legR.rotation.x = -sw;
-      walker.armL.rotation.x = -sw * 0.8;
-      walker.armR.rotation.x = sw * 0.8;
+      walker.animate(clock * 5.5, still ? 0 : 1);
       targetRing.position.set(tgtX, 0.08, tgtZ - 0.2);
       targetRing.scale.set(0.5, 1, 0.5);
       labels.push({
@@ -797,7 +591,18 @@ export function createWorld(host: HTMLElement, labelLayer: HTMLElement): World {
     camera.lookAt(camLook);
     camera.updateMatrixWorld();
 
-    renderer.render(scene, camera);
+    const t0 = performance.now();
+    if (q === 2 && composer) composer.render(dt);
+    else renderer.render(scene, camera);
+    if (!lockQ && q > 0 && dt > 0) {
+      const ms = performance.now() - t0;
+      slow = ms > 28 ? slow + 1 : Math.max(0, slow - 1);
+      if (slow > 40) {
+        slow = 0;
+        q = (q - 1) as Quality;
+        applyQuality();
+      }
+    }
     paintLabels(labels, inp.labels, width, height);
   }
 
@@ -805,11 +610,16 @@ export function createWorld(host: HTMLElement, labelLayer: HTMLElement): World {
     width = Math.max(w, 1);
     height = Math.max(h, 1);
     renderer.setSize(width, height, false);
+    composer?.setSize(width, height);
     camera.aspect = width / height;
     camera.updateProjectionMatrix();
   }
 
+  applyQuality();
+
   function dispose() {
+    env.dispose();
+    composer?.dispose();
     for (const el of labelEls.values()) el.remove();
     labelEls.clear();
     scene.traverse((o) => {
@@ -824,11 +634,16 @@ export function createWorld(host: HTMLElement, labelLayer: HTMLElement): World {
   }
 
   return {
+    setQuality(v) {
+      q = v;
+      applyQuality();
+    },
+    quality: () => q,
     update,
     resize,
     nudge(dYaw, dZoom) {
       yawOff = Math.max(-1.2, Math.min(1.2, yawOff + dYaw));
-      zoom = Math.max(0.55, Math.min(1.8, zoom * (1 + dZoom)));
+      zoom = Math.max(0.2, Math.min(1.8, zoom * (1 + dZoom)));
     },
     resetView() {
       yawOff = 0;

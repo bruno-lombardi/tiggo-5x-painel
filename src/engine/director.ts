@@ -93,6 +93,7 @@ export function directorStep(s: SimState, prev: DirState): { actions: Action[]; 
             distance: 110 + rand(dir) * 40,
             speed: Math.max(40, Math.min(100, s.speed * (0.5 + rand(dir) * 0.3))),
             lane,
+            variant: rand(dir) < 0.3 ? 1 : 0,
           },
         }),
     },
@@ -104,7 +105,7 @@ export function directorStep(s: SimState, prev: DirState): { actions: Action[]; 
     {
       w: 2,
       run: () =>
-        actions.push({ type: "target", target: { kind: "pedestrian", distance: 100 + rand(dir) * 40, speed: 0, lane } }),
+        actions.push({ type: "target", target: { kind: "pedestrian", distance: 100 + rand(dir) * 40, speed: 0, lane, variant: Math.floor(rand(dir) * 3) } }),
     },
   ];
   const sides = [lane > -1 ? "left" : null, lane < 1 ? "right" : null].filter(Boolean) as ("left" | "right")[];

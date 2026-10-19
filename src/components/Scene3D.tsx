@@ -12,6 +12,8 @@ const MODES: { id: CamMode; label: string; hint: string }[] = [
   { id: "side", label: "De lado", hint: "Vista lateral, boa para ver distâncias." },
 ];
 
+const QUALITY_LABEL = ["Leve", "Normal", "Alta"] as const;
+
 const SHOWN_LABEL: Record<ShownMode, string> = {
   chase: "vista de trás",
   top: "vista de cima",
@@ -47,6 +49,7 @@ export default function Scene3D({
   const [mode, setMode] = useState<CamMode>("auto");
   const [sensors, setSensors] = useState(true);
   const [labels, setLabels] = useState(true);
+  const [quality, setQuality] = useState<0 | 1 | 2>(2);
   const [shown, setShown] = useState<ShownMode>("chase");
 
   live.current.s = state;
@@ -67,6 +70,7 @@ export default function Scene3D({
       return;
     }
     world.current = w;
+    setQuality(w.quality());
     const mq = window.matchMedia("(prefers-reduced-motion: reduce)");
     const sync = () => (live.current.reduced = mq.matches);
     sync();
@@ -79,6 +83,7 @@ export default function Scene3D({
     let raf = 0;
     let last = performance.now();
     let lastShown: ShownMode = "chase";
+    let lastQ: 0 | 1 | 2 = w.quality();
     const loop = (now: number) => {
       raf = requestAnimationFrame(loop);
       if (document.hidden) {
@@ -87,6 +92,10 @@ export default function Scene3D({
       }
       w.update(live.current, (now - last) / 1000);
       last = now;
+      if (w.quality() !== lastQ) {
+        lastQ = w.quality();
+        setQuality(lastQ);
+      }
       const cur = w.shownMode();
       if (cur !== lastShown) {
         lastShown = cur;
@@ -170,6 +179,18 @@ export default function Scene3D({
             </button>
             <button type="button" className="chip" aria-pressed={labels} onClick={() => setLabels((v) => !v)}>
               Rótulos
+            </button>
+            <button
+              type="button"
+              className="chip"
+              aria-label={`Qualidade gráfica: ${QUALITY_LABEL[quality]}. Clique para alterar.`}
+              onClick={() => {
+                const next = (((world.current?.quality() ?? 2) + 2) % 3) as 0 | 1 | 2;
+                world.current?.setQuality(next);
+                setQuality(next);
+              }}
+            >
+              Gráficos: {QUALITY_LABEL[quality]}
             </button>
             <span className="scene-mode" aria-live="polite">
               {SHOWN_LABEL[shown]}
