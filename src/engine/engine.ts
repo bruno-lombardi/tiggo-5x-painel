@@ -1,3 +1,4 @@
+import { PT, cvtRpm, wheelForce } from "./powertrain";
 import { GEO, SERRA_LENGTH, SERRA_VILLAGE_END, SERRA_VILLAGE_START, laneX, roadAt } from "./route";
 import type { WorldId } from "./route";
 import type {
@@ -103,6 +104,7 @@ export function createInitialState(hasMaxDrive = true, world: WorldId = "highway
     world,
     route: { s: 0, finished: false },
     throttle: 0,
+    wheel: 0,
     brakeP: 0,
     ax: 0,
     ay: 0,
@@ -276,12 +278,10 @@ const START_FUEL = 0.62;
 /** Rotação aproximada. ILUSTRATIVA: o manual não informa a relação de marchas do CVT. */
 export function estimateRpm(s: SimState): number {
   if (!s.ignitionOn) return 0;
-  const base = 800;
-  const load = s.accel === 2 ? 1.5 : s.accel === 1 ? 1.15 : 1;
   const driveable = s.gear === "D" || s.gear === "R";
-  const fromSpeed = driveable ? s.speed * 22 * load : 0;
-  const rev = s.accel > 0 && !driveable ? 2200 : 0;
-  return Math.min(7200, base + fromSpeed + rev);
+  if (driveable && s.speed > 0.5) return cvtRpm(s.speed / 3.6, s.throttle);
+  const rev = s.accel > 0 ? 2200 * s.throttle + 800 * (s.accel > 0 ? 1 : 0) : 0;
+  return PT.idle + (driveable ? 0 : rev);
 }
 
 export function evaluate(s: SimState): Derived {
@@ -626,17 +626,17 @@ function tick(prev: SimState, dt: number): SimState {
 
   // Forças longitudinais.
   const driving = driveable && s.gear === "D" ? 1 : 0.7;
-  const fAvail = Math.min(PH.fMax * driving, (PH.power * driving) / Math.max(v0, 3));
+  const pedal = clamp(throttle, 0, 1);
   const resistance = 0.5 * PH.rho * PH.cdA * v0 * v0 + PH.crr * PH.mass * PH.g;
   const slope = s.gear === "R" ? 0 : road.grade * PH.mass * PH.g;
   let a = 0;
   let driverOn = throttle > 0.02;
   if (driverOn && driveable) {
-    a = (throttle * fAvail - resistance - slope) / PH.mass;
+    a = (wheelForce(v0, pedal) * driving - resistance - slope) / PH.mass;
   } else if (!s.brake && s.acc.mode === "active" && aebStage === "idle" && driveable) {
     // O ACC pede uma aceleração; o motor entrega só o que a potência e a ladeira permitem.
     const want = accControl(s) / 3.6;
-    const avail = (fAvail - resistance - slope) / PH.mass;
+    const avail = (wheelForce(v0, 0.85) * driving - resistance - slope) / PH.mass;
     a = Math.min(want, avail);
     if (want < 0) a = want;
     driverOn = true;
@@ -694,8 +694,11 @@ function tick(prev: SimState, dt: number): SimState {
   if (t.kind !== "none") distance = clamp(distance, inLane ? 0.5 : -80, 400);
 
   // Posição lateral: o volante só faz efeito com o carro em movimento e perde agilidade com a velocidade.
-  const lateralRate = (clamp(speed / 25, 0, 1) * 2.6) / (1 + (speed / 100) ** 2);
-  let lateral = s.lateral + s.steer * lateralRate * dt + outward * slip * dt;
+  // O volante gira aos poucos (direção elétrica) e perde eficácia quando o pneu dianteiro chega ao limite (subesterço).
+  const wheel = approach(s.wheel, s.steer, s.steer !== 0 && Math.sign(s.steer) === Math.sign(s.wheel || s.steer) ? 2.4 : 4.2);
+  const grip = 1 - 0.55 * smoothstep(0.7, 1.15, Math.abs(ayReq) / aLimit);
+  const lateralRate = (clamp(speed / 25, 0, 1) * 2.6 * grip) / (1 + (speed / 100) ** 2);
+  let lateral = s.lateral + wheel * lateralRate * dt + outward * slip * dt;
   if (s.world === "highway") lateral = clamp(lateral, -MAX_LATERAL, MAX_LATERAL);
   else lateral = clamp(lateral, geo.crashLeft - 0.6, geo.crashRight + 0.6);
   const offset = lateral - Math.round(lateral / geo.lane) * geo.lane;
@@ -773,6 +776,7 @@ function tick(prev: SimState, dt: number): SimState {
     odo: s.odo + km,
     trip,
     throttle,
+    wheel,
     brakeP,
     ax: Number.isFinite(ax) ? ax : 0,
     ay: ayReq,
@@ -789,10 +793,8 @@ function tick(prev: SimState, dt: number): SimState {
 }
 
 const PH = {
-  mass: 1560, // carro + motorista (kg)
-  power: 92000, // potência efetiva nas rodas (W)
-  fMax: 3700, // força máxima de tração (N)
-  cdA: 0.72, // coeficiente de arrasto x área frontal (m²)
+  mass: PT.mass, // carro + motorista (kg)
+  cdA: 0.82, // coeficiente de arrasto x área frontal (m²)
   crr: 0.012,
   rho: 1.2,
   g: 9.81,

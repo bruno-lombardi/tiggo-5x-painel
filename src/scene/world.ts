@@ -399,7 +399,7 @@ export function createWorld(host: HTMLElement, labelLayer: HTMLElement, worldId:
 
     /* Seu carro e a saída de faixa */
     ownX += (s.lateral - ownX) * (1 - Math.exp(-dt * 12));
-    ownYaw += ((s.speed > 1 ? -s.steer * 0.07 : 0) - ownYaw) * (1 - Math.exp(-dt * 6));
+    ownYaw += ((s.speed > 1 ? -s.wheel * 0.08 : 0) - ownYaw) * (1 - Math.exp(-dt * 6));
     own.group.position.x = ownX;
     own.group.rotation.y = ownYaw;
     if (serraMode) {

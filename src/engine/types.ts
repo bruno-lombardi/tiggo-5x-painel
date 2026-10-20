@@ -95,6 +95,8 @@ export interface SimState {
   lateral: number;
   /** volante: -1 esquerda, 0 reto, 1 direita */
   steer: -1 | 0 | 1;
+  /** posição suavizada do volante (-1 a 1) */
+  wheel: number;
   /** hodômetro total (km) e dados da viagem — consumo ILUSTRATIVO */
   odo: number;
   trip: { km: number; seconds: number; liters: number };

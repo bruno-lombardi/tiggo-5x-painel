@@ -294,7 +294,7 @@ describe("Estado geral", () => {
 describe("volante e faixas", () => {
   it("esterçar para a esquerda sem seta dispara o LDW; seta cala o aviso", () => {
     let s = driving(90, { steer: -1 });
-    s = advance(s, 0.6);
+    s = advance(s, 1.0);
     expect(s.lateral).toBeLessThan(-0.85);
     expect(evaluate(s).ldwWarn).toBe(true);
     expect(evaluate({ ...s, turnSignal: "left" }).ldwWarn).toBe(false);

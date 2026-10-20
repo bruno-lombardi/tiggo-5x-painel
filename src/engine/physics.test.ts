@@ -16,15 +16,31 @@ const run = (s: SimState, sec: number, dt = 0.05) => {
 };
 
 describe("física: longitudinal", () => {
-  it("0 a 100 km/h leva entre 8 e 14 s com o pé a fundo", () => {
+  it("0 a 100 km/h leva cerca de 10,3 s com o pé a fundo (ficha do carro)", () => {
     let s = base({ accel: 2 });
     let t = 0;
     while (s.speed < 100 && t < 30) {
       s = reduce(s, { type: "tick", dt: 0.05 });
       t += 0.05;
     }
-    expect(t).toBeGreaterThan(8);
-    expect(t).toBeLessThan(14);
+    expect(t).toBeGreaterThan(9.6);
+    expect(t).toBeLessThan(11);
+  });
+
+  it("a velocidade final fica perto de 193 km/h", () => {
+    const s = run(base({ speed: 120, accel: 2 }), 240, 0.1);
+    expect(s.speed).toBeGreaterThan(188);
+    expect(s.speed).toBeLessThan(198);
+  });
+
+  it("o volante gira aos poucos: o efeito cresce com o tempo de tecla apertada", () => {
+    let s = base({ speed: 60, steer: 1 });
+    s = run(s, 0.1);
+    const early = s.wheel;
+    s = run(s, 0.6);
+    expect(early).toBeGreaterThan(0);
+    expect(early).toBeLessThan(0.4);
+    expect(s.wheel).toBe(1);
   });
 
   it("freada total de 100 km/h para em 38 a 60 m", () => {
