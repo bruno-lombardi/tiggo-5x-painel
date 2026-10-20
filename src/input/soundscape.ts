@@ -592,7 +592,7 @@ export function createSoundscape(): Soundscape {
 
     /* faixa sonora e freada */
     tauSet(rumbleEnable.gain, s.laneDeparture && s.speed > 5 ? 0.55 : 0, 0.04);
-    const hard = s.ignitionOn && s.speed > 18 && (s.absActive || s.aeb === "emergency");
+    const hard = s.ignitionOn && s.speed > 18 && (s.absActive || s.aeb === "emergency" || s.espActive || Math.abs(s.slip) > 0.25);
     tauSet(squealGain.gain, hard ? 0.07 : 0, 0.05);
     tauSet(absGain.gain, hard ? 0.45 : 0, 0.05);
     if (s.brake && s.speed > 25 && !hard) burst(0.12, { type: "highpass", f0: 5000, gain: 0.015, out: ext });
@@ -620,8 +620,9 @@ export function createSoundscape(): Soundscape {
 
     /* outros veículos com posição conhecida */
     const clk = s.clock;
-    if (s.oncoming) {
-      const z = -150 + ((clk * 26) % 190);
+    const nearOnc = s.world === "serra" ? s.oncomingList.filter((o) => o.d > -60).sort((a, b) => Math.abs(a.d) - Math.abs(b.d))[0] : undefined;
+    if (s.world === "serra" ? !!nearOnc : s.oncoming) {
+      const z = nearOnc ? -nearOnc.d : -150 + ((clk * 26) % 190);
       const prox = 1 / (1 + Math.abs(z) / 18);
       const dop = z < 0 ? 1.08 : 0.9;
       voices.oncoming.set(0.2 * prox, 78 * dop, -0.6 - 0.2 * prox, 0.3 + prox * 0.7);

@@ -81,7 +81,7 @@ function telltales(s: SimState, d: Derived): Telltale[] {
     { id: "ihc", label: "IHC", tone: s.faults.ihc && md ? "amber" : ihcOn ? "white" : "dim", feature: "tt_ihc" },
     { id: "hi", label: "ALTO", tone: d.highBeam ? "blue" : "dim", feature: "ihc" },
     { id: "avm", label: "360°", tone: s.avmOn ? "blue" : "dim", feature: "avm" },
-    { id: "esp", label: "ESP OFF", tone: !s.esp ? "amber" : "dim", feature: "tt_esp" },
+    { id: "esp", label: s.esp ? "ESP" : "ESP OFF", tone: !s.esp || s.espActive ? "amber" : "dim", blink: s.espActive, feature: "tt_esp" },
     { id: "hdc", label: "HDC", tone: s.hdc ? "green" : "dim", feature: "tt_hdc" },
     { id: "epb", label: "FREIO", tone: s.parkingBrake ? "red" : "dim", feature: "tt_epb" },
     { id: "belt", label: "CINTO", tone: !s.seatbelt ? "red" : "dim", feature: "tt_belt" },

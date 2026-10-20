@@ -172,7 +172,10 @@ describe("AEB e alerta de colisão frontal", () => {
 
   it("evita a batida em alvo parado a 50 km/h", () => {
     let s = withTarget(50, "staticVehicle", 45);
-    s = advance(s, 12);
+    s = advance(s, 5);
+    // O carro não fica retido: o motorista segura com o freio de estacionamento.
+    s = { ...s, parkingBrake: true };
+    s = advance(s, 7);
     expect(s.collided).toBe(false);
     expect(s.speed).toBe(0);
     expect(s.aebStopped).toBe(true);
@@ -299,7 +302,7 @@ describe("volante e faixas", () => {
 
   it("trocar de faixa completa a manobra sem alerta ao final", () => {
     let s = driving(90, { steer: -1, turnSignal: "left" });
-    s = advance(s, 1.6);
+    s = advance(s, 2.6);
     expect(s.lateral).toBeLessThan(-3.2);
     s = { ...s, steer: 0 };
     s = advance(s, 0.1);

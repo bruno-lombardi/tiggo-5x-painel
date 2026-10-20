@@ -5,6 +5,7 @@ import { SCENARIOS } from "../content/scenarios";
 import type { Scenario } from "../content/scenarios";
 import type { Derived } from "../engine/engine";
 import type { Action, SimState } from "../engine/types";
+import { nextCurve, SERRA_LENGTH, SERRA_LIMIT } from "../engine/route";
 import { CONTROLS } from "../input/controller";
 import type { ControlId, Controller } from "../input/controller";
 import { Cluster } from "./Cluster";
@@ -215,14 +216,51 @@ function fmtMin(sec: number) {
   return `${Math.floor(sec / 60)}:${String(Math.floor(sec % 60)).padStart(2, "0")}`;
 }
 
+type Stats = { km: number; collisions: number; saves: number; accSec: number; overSec: number; espSec: number; maxSpeed: number };
+
 function Hud(props: {
+  state: SimState;
   scenario: Scenario | null;
   progress: number;
-  stats: { km: number; collisions: number; saves: number; accSec: number };
+  stats: Stats;
   onExit: () => void;
   onResetStats: () => void;
 }) {
   const sc = props.scenario;
+  const s = props.state;
+  if (!sc && s.world === "serra") {
+    const left = Math.max(0, SERRA_LENGTH - s.route.s);
+    const pct = Math.min(100, (s.route.s / SERRA_LENGTH) * 100);
+    const c = nextCurve("serra", s.route.s, 220);
+    const hot = !!c && s.speed > c.advised + 8;
+    return (
+      <div className="hud hud-serra" aria-label="Trajeto">
+        <p className="hud-title">Serra do Mirante</p>
+        <div className="route-bar" role="progressbar" aria-label="Progresso do trajeto" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(pct)}>
+          <i style={{ width: `${pct}%` }} />
+        </div>
+        <p className="hud-hint">
+          {s.route.finished ? "Chegada!" : `Faltam ${(left / 1000).toFixed(1).replace(".", ",")} km · limite sugerido ${SERRA_LIMIT} km/h`}
+        </p>
+        {c && s.route.s < c.end ? (
+          <span className={`curve-chip ${hot ? "hot" : ""}`}>
+            Curva {c.dir > 0 ? "←" : "→"} · {c.advised} km/h
+            {c.start > s.route.s ? ` · ${Math.round(c.start - s.route.s)} m` : ""}
+          </span>
+        ) : null}
+        <dl className="stats">
+          <div>
+            <dt>Colisões</dt>
+            <dd>{props.stats.collisions}</dd>
+          </div>
+          <div>
+            <dt>ESP atuou</dt>
+            <dd>{fmtMin(props.stats.espSec)}</dd>
+          </div>
+        </dl>
+      </div>
+    );
+  }
   if (!sc) {
     return (
       <div className="hud" aria-label="Placar">
@@ -251,6 +289,7 @@ function Hud(props: {
       </div>
     );
   }
+  if (!sc) return null;
   const st = sc.steps[props.progress];
   return (
     <div className="hud hud-mission" aria-label="Missão">
@@ -290,12 +329,17 @@ function Overlay({ children }: { children: ReactNode }) {
   return <div className="overlay">{children}</div>;
 }
 
-function StartCard(props: { onStart: () => void; onMission: (id: string) => void }) {
+function StartCard(props: { world: SimState["world"]; onStart: () => void; onMission: (id: string) => void; onMenu: () => void }) {
+  const serra = props.world === "serra";
   return (
     <Overlay>
       <div className="card">
-        <h2>Estrada livre</h2>
-        <p>Dirija com o teclado e veja os assistentes do Max Drive em ação. O trânsito aparece sozinho.</p>
+        <h2>{serra ? "Serra do Mirante" : "Estrada livre"}</h2>
+        <p>
+          {serra
+            ? "Pista simples entre montanhas, com curvas, subidas e carros vindo de frente. Freie antes das curvas e fique na sua faixa."
+            : "Dirija com o teclado e veja os assistentes do Max Drive em ação. O trânsito aparece sozinho."}
+        </p>
         <ul className="keys-help">
           <li>
             <kbd>↑</kbd> acelera, <kbd>↓</kbd> freia, <kbd>←</kbd> <kbd>→</kbd> viram o volante
@@ -313,6 +357,68 @@ function StartCard(props: { onStart: () => void; onMission: (id: string) => void
           </button>
           <button type="button" className="ghost" onClick={() => props.onMission("basics")}>
             Aprender o básico (missão)
+          </button>
+          <button type="button" className="ghost" onClick={props.onMenu}>
+            Menu principal
+          </button>
+        </div>
+      </div>
+    </Overlay>
+  );
+}
+
+function ResultCard(props: { state: SimState; stats: Stats; onAgain: () => void; onMenu: () => void }) {
+  const s = props.state;
+  const secs = Math.max(1, s.trip.seconds);
+  const avg = (s.trip.km / (secs / 3600)) || 0;
+  const mm = Math.floor(secs / 60);
+  const ss = Math.round(secs % 60);
+  const grade =
+    props.stats.collisions === 0 && props.stats.overSec < 20 && props.stats.espSec < 3
+      ? "Condução impecável"
+      : props.stats.collisions === 0 && props.stats.espSec < 12
+        ? "Boa condução"
+        : "Dá para suavizar mais";
+  return (
+    <Overlay>
+      <div className="card" role="dialog" aria-label="Chegada">
+        <h2>Chegada! {grade}.</h2>
+        <p>Você completou os 10 km da Serra do Mirante (trajeto inventado).</p>
+        <dl className="results">
+          <div>
+            <dt>Tempo</dt>
+            <dd>
+              {mm} min {String(ss).padStart(2, "0")} s
+            </dd>
+          </div>
+          <div>
+            <dt>Velocidade média</dt>
+            <dd>{Math.round(avg)} km/h</dd>
+          </div>
+          <div>
+            <dt>Colisões</dt>
+            <dd>{props.stats.collisions}</dd>
+          </div>
+          <div>
+            <dt>Acima do limite</dt>
+            <dd>{fmtMin(props.stats.overSec)}</dd>
+          </div>
+          <div>
+            <dt>ESP atuando</dt>
+            <dd>{fmtMin(props.stats.espSec)}</dd>
+          </div>
+          <div>
+            <dt>Maior velocidade</dt>
+            <dd>{Math.round(props.stats.maxSpeed)} km/h</dd>
+          </div>
+        </dl>
+        <p className="menu-note">Dica: quanto menos o ESP precisar agir, mais suave foi a sua condução nas curvas.</p>
+        <div className="card-actions">
+          <button type="button" className="primary" onClick={props.onAgain}>
+            Dirigir de novo
+          </button>
+          <button type="button" className="ghost" onClick={props.onMenu}>
+            Menu principal
           </button>
         </div>
       </div>
@@ -487,7 +593,9 @@ export function DriveView(props: {
   nextMission: () => void;
   started: boolean;
   begin: () => void;
-  stats: { km: number; collisions: number; saves: number; accSec: number; reset: () => void };
+  onMenu: () => void;
+  carColor: number;
+  stats: Stats & { reset: () => void };
 }) {
   const { state: s, derived: d, scenario } = props;
   const finished = scenario ? props.progress >= scenario.steps.length : false;
@@ -499,8 +607,9 @@ export function DriveView(props: {
     <div className={`drive ${fs.on ? "drive-full" : ""} ${keysOpen ? "keys-open" : ""}`} ref={fs.ref}>
       <div className="drive-stage">
         <Suspense fallback={<div className="scene scene-loading">Carregando a estrada…</div>}>
-          <Scene3D state={s} derived={d} variant="game">
+          <Scene3D state={s} derived={d} variant="game" carColor={props.carColor}>
             <Hud
+              state={s}
               scenario={scenario}
               progress={props.progress}
               stats={props.stats}
@@ -536,7 +645,10 @@ export function DriveView(props: {
                 ↑ acelera · ↓ freia · ← → volante · F ou Esc sai da tela cheia
               </p>
             ) : null}
-            {showStart ? <StartCard onStart={props.begin} onMission={props.startMission} /> : null}
+            {showStart ? <StartCard world={s.world} onStart={props.begin} onMission={props.startMission} onMenu={props.onMenu} /> : null}
+            {!scenario && s.world === "serra" && s.route.finished ? (
+              <ResultCard state={s} stats={props.stats} onAgain={props.begin} onMenu={props.onMenu} />
+            ) : null}
             {scenario && finished ? (
               <QuizCard
                 scenario={scenario}

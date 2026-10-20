@@ -302,3 +302,138 @@ export function tuftTexture(): THREE.CanvasTexture {
   }
   return finish(c, { aniso: 4 });
 }
+
+/** Placa amarela de curva (losango) com seta. `dir`: +1 esquerda, -1 direita. */
+export function curveSignTexture(dir: 1 | -1): THREE.CanvasTexture {
+  const c = canvas(256);
+  const cx = c.getContext("2d")!;
+  cx.clearRect(0, 0, 256, 256);
+  cx.save();
+  cx.translate(128, 128);
+  cx.rotate(Math.PI / 4);
+  cx.fillStyle = "#ffd21f";
+  cx.fillRect(-84, -84, 168, 168);
+  cx.strokeStyle = "#141414";
+  cx.lineWidth = 9;
+  cx.strokeRect(-76, -76, 152, 152);
+  cx.restore();
+  // seta em curva
+  cx.save();
+  cx.translate(128, 128);
+  cx.scale(-dir, 1);
+  cx.strokeStyle = "#141414";
+  cx.fillStyle = "#141414";
+  cx.lineWidth = 16;
+  cx.lineCap = "round";
+  cx.beginPath();
+  cx.moveTo(-8, 62);
+  cx.lineTo(-8, 8);
+  cx.quadraticCurveTo(-8, -34, 36, -34);
+  cx.stroke();
+  cx.beginPath();
+  cx.moveTo(26, -64);
+  cx.lineTo(62, -34);
+  cx.lineTo(26, -4);
+  cx.closePath();
+  cx.fill();
+  cx.restore();
+  return finish(c, { aniso: 4 });
+}
+
+/** Plaquinha retangular com a velocidade recomendada. */
+export function advisoryTexture(kmh: number): THREE.CanvasTexture {
+  const c = canvas(128, 64);
+  const cx = c.getContext("2d")!;
+  cx.fillStyle = "#ffd21f";
+  cx.fillRect(0, 0, 128, 64);
+  cx.strokeStyle = "#141414";
+  cx.lineWidth = 5;
+  cx.strokeRect(3, 3, 122, 58);
+  cx.fillStyle = "#141414";
+  cx.font = "bold 34px sans-serif";
+  cx.textAlign = "center";
+  cx.textBaseline = "middle";
+  cx.fillText(`${kmh}`, 52, 34);
+  cx.font = "bold 16px sans-serif";
+  cx.fillText("km/h", 100, 38);
+  return finish(c, { aniso: 4 });
+}
+
+/** Placa de "chevron" (setas pretas sobre amarelo) para o lado de fora das curvas. */
+export function chevronTexture(dir: 1 | -1): THREE.CanvasTexture {
+  const c = canvas(128, 256);
+  const cx = c.getContext("2d")!;
+  cx.fillStyle = "#ffd21f";
+  cx.fillRect(0, 0, 128, 256);
+  cx.strokeStyle = "#141414";
+  cx.lineWidth = 8;
+  cx.strokeRect(5, 5, 118, 246);
+  cx.lineWidth = 22;
+  cx.lineCap = "butt";
+  cx.lineJoin = "miter";
+  cx.beginPath();
+  const d = -dir; // seta aponta para onde a curva vai
+  cx.moveTo(64 - 34 * d, 70);
+  cx.lineTo(64 + 34 * d, 128);
+  cx.lineTo(64 - 34 * d, 186);
+  cx.stroke();
+  return finish(c, { aniso: 4 });
+}
+
+/** Fachada de casa com janelas (a parte acesa à noite é emissiva). */
+export function houseTexture(emissive = false): THREE.CanvasTexture {
+  const c = canvas(128);
+  const cx = c.getContext("2d")!;
+  const r = rng(emissive ? 5 : 5);
+  cx.fillStyle = emissive ? "#000" : "#f2eee6";
+  cx.fillRect(0, 0, 128, 128);
+  for (let row = 0; row < 2; row++) {
+    for (let col = 0; col < 3; col++) {
+      const x = 14 + col * 38;
+      const y = 18 + row * 52;
+      const lit = r() > 0.35;
+      cx.fillStyle = emissive ? (lit ? "#ffd89a" : "#000") : "#46586a";
+      cx.fillRect(x, y, 24, 32);
+      if (!emissive) {
+        cx.strokeStyle = "#8a7d6a";
+        cx.lineWidth = 3;
+        cx.strokeRect(x - 1, y - 1, 26, 34);
+      }
+    }
+  }
+  return finish(c, { aniso: 4 });
+}
+
+/** Água do rio: faixas suaves de azul-esverdeado. */
+export function waterTexture(): THREE.CanvasTexture {
+  const size = 256;
+  const r = rng(91);
+  const n = valueNoise(size, 24, r);
+  const m = valueNoise(size, 6, r);
+  const c = canvas(size);
+  const cx = c.getContext("2d")!;
+  const img = cx.createImageData(size, size);
+  for (let i = 0; i < size * size; i++) {
+    const v = 0.6 * n[i] + 0.4 * m[i];
+    img.data[i * 4] = 24 + v * 30;
+    img.data[i * 4 + 1] = 78 + v * 50;
+    img.data[i * 4 + 2] = 96 + v * 50;
+    img.data[i * 4 + 3] = 255;
+  }
+  cx.putImageData(img, 0, 0);
+  return finish(c, { repeat: [20, 20] });
+}
+
+/** Xadrez de chegada. */
+export function checkerTexture(): THREE.CanvasTexture {
+  const c = canvas(256, 64);
+  const cx = c.getContext("2d")!;
+  const n = 8;
+  for (let i = 0; i < 32; i++) {
+    for (let j = 0; j < 8; j++) {
+      cx.fillStyle = (i + j) % 2 ? "#111" : "#f4f4f4";
+      cx.fillRect(i * n, j * n, n, n);
+    }
+  }
+  return finish(c, { aniso: 4 });
+}

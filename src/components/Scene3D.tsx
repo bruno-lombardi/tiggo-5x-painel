@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 import type { Derived } from "../engine/engine";
 import type { SimState } from "../engine/types";
 import { createWorld } from "../scene/world";
+import type { WorldId } from "../engine/route";
 import type { CamMode, ShownMode, World, WorldInput } from "../scene/world";
 
 const MODES: { id: CamMode; label: string; hint: string }[] = [
@@ -26,14 +27,17 @@ export default function Scene3D({
   state,
   derived,
   variant = "panel",
+  carColor = 0xe9eef1,
   children,
 }: {
   state: SimState;
   derived: Derived;
   variant?: "panel" | "game";
+  carColor?: number;
   children?: ReactNode;
 }) {
   const game = variant === "game";
+  const worldId: WorldId = state.world;
   const host = useRef<HTMLDivElement>(null);
   const layer = useRef<HTMLDivElement>(null);
   const world = useRef<World | null>(null);
@@ -64,7 +68,7 @@ export default function Scene3D({
     if (!el || !lay) return;
     let w: World;
     try {
-      w = createWorld(el, lay);
+      w = createWorld(el, lay, worldId, carColor);
     } catch {
       setFailed(true);
       return;
@@ -111,7 +115,8 @@ export default function Scene3D({
       w.dispose();
       world.current = null;
     };
-  }, []);
+    // a cena é recriada quando muda o mundo ou a cor do carro
+  }, [worldId, carColor]);
 
   /* Arrastar gira a câmera; roda do mouse ou +/- dá zoom. */
   const drag = useRef<{ x: number } | null>(null);

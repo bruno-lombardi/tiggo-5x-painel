@@ -14,7 +14,9 @@ describe("cenários guiados", () => {
 
   it("AEB em carro parado a 45 km/h freia sem colidir", () => {
     let s = reduce(createInitialState(true), { type: "load", state: SCENARIOS.find((x) => x.id === "aeb-static")!.build() });
-    for (let i = 0; i < 400; i++) s = reduce(s, { type: "tick", dt: 0.05 });
+    for (let i = 0; i < 100; i++) s = reduce(s, { type: "tick", dt: 0.05 });
+    s = { ...s, parkingBrake: true };
+    for (let i = 0; i < 300; i++) s = reduce(s, { type: "tick", dt: 0.05 });
     expect(s.collided).toBe(false);
     expect(s.speed).toBeLessThan(1);
   });

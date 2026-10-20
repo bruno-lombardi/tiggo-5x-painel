@@ -24,6 +24,19 @@ export interface Settings {
   avmOnSteer: boolean;
 }
 
+export type { WorldId } from "./route";
+import type { WorldId } from "./route";
+
+export type CrashKind = "none" | "traffic" | "barrier";
+
+/** Carro vindo em sentido contrário (só na Serra). */
+export interface Oncoming {
+  /** metros entre o seu para-choque e o dele (negativo = já passou) */
+  d: number;
+  /** km/h */
+  v: number;
+}
+
 export interface Target {
   kind: TargetKind;
   /** metros até o alvo */
@@ -85,6 +98,24 @@ export interface SimState {
   /** hodômetro total (km) e dados da viagem — consumo ILUSTRATIVO */
   odo: number;
   trip: { km: number; seconds: number; liters: number };
+
+  /** mundo em que se dirige */
+  world: WorldId;
+  /** posição no percurso (m) e se já chegou ao fim (só na Serra) */
+  route: { s: number; finished: boolean };
+  /** pedais suavizados (0 a 1) */
+  throttle: number;
+  brakeP: number;
+  /** aceleração longitudinal e lateral (m/s²), para a sensação de peso e os sons */
+  ax: number;
+  ay: number;
+  /** velocidade de escorregada para fora da curva (m/s) */
+  slip: number;
+  /** o ESP está atuando agora */
+  espActive: boolean;
+  crashKind: CrashKind;
+  crashT: number;
+  oncomingList: Oncoming[];
 }
 
 export type Action =
@@ -110,6 +141,7 @@ export type Action =
   | { type: "target"; target: Partial<Target> }
   | { type: "resetTarget" }
   | { type: "variant"; hasMaxDrive: boolean }
+  | { type: "newGame"; hasMaxDrive: boolean; world: WorldId; night: boolean; at?: number }
   | { type: "load"; state: SimState }
   | { type: "tripReset" }
   | { type: "steer"; dir: -1 | 0 | 1 }

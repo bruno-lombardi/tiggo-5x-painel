@@ -1,6 +1,7 @@
 import { assessAeb, inPath, LIMITS } from "../engine/engine";
 import type { Derived } from "../engine/engine";
 import type { SimState } from "../engine/types";
+import { nextCurve, SERRA_LIMIT } from "../engine/route";
 import { ACC_CONDITION_LABELS } from "./features";
 
 export type Tone = "ok" | "info" | "warn" | "alert";
@@ -24,6 +25,7 @@ export function narrate(s: SimState, d: Derived): Line[] {
     push("car", "info", "O carro está desligado. Ligue-o para começar.");
     return out;
   }
+  if (s.world === "serra") serraLines(s, push);
   if (!s.hasMaxDrive) {
     push("md", "info", "Esta versão não tem o pacote Max Drive. ACC, AEB, LDW, ponto cego e farol alto inteligente não existem.");
     return out;
@@ -170,4 +172,45 @@ export function narrate(s: SimState, d: Derived): Line[] {
   if (s.avmOn) push("avm", "info", "Câmera 360° aberta. Ela fecha sozinha acima de 30 km/h.");
 
   return out;
+}
+
+/** Frases próprias da Serra: curvas, aderência, faixa contrária e batidas. */
+function serraLines(s: SimState, push: (id: string, tone: Tone, text: string) => void) {
+  if (s.crashKind === "barrier") {
+    push("crash", "alert", "Você saiu da pista e bateu na lateral. Na serra não há espaço de sobra: reduza antes da curva. O carro volta ao meio da faixa em instantes.");
+    return;
+  }
+  if (s.crashKind === "traffic") {
+    push("crash", "alert", "Colisão com um carro que vinha em sentido contrário. Na pista simples, ficar na sua faixa é a regra número um.");
+    return;
+  }
+  if (s.route.finished) {
+    push("end", "ok", "Você chegou ao fim do trajeto. Veja o resumo na tela.");
+  }
+  if (s.espActive) {
+    push("esp-act", "warn", "O ESP atuou: você entrou rápido demais na curva e o sistema freia rodas para segurar a trajetória. Alivie o acelerador antes da próxima.");
+  } else if (s.absActive) {
+    push("abs", "info", "ABS atuando: a frenagem foi tão forte que as rodas quase travaram. O pedal vibra e você mantém o controle da direção.");
+  }
+  const c = nextCurve(s.world, s.route.s, 170);
+  if (c && s.route.s < c.end) {
+    const dist = Math.max(0, Math.round(c.start - s.route.s));
+    const side = c.dir > 0 ? "à esquerda" : "à direita";
+    const over = s.speed > c.advised + 8;
+    push(
+      "curve",
+      over ? "warn" : "info",
+      dist > 0
+        ? `Curva ${side} em ${dist} m. Velocidade sugerida na placa: ${c.advised} km/h${over ? ". Você está acima: tire o pé agora." : "."}`
+        : `Dentro da curva ${side}. Velocidade sugerida: ${c.advised} km/h${over ? ". Você está acima: o ESP pode atuar." : "."}`,
+    );
+  }
+  if (s.lateral < -1.3 && s.speed > 5) {
+    push("lane", "warn", "Você está invadindo a faixa do sentido contrário. Volte para a sua.");
+  } else if (s.oncomingList.some((o) => o.d > 0 && o.d < 160)) {
+    push("onc", "info", "Carro vindo de frente. Mantenha-se no meio da sua faixa e não ultrapasse.");
+  }
+  if (s.speed > SERRA_LIMIT + 3) {
+    push("limit", "warn", `Você está a ${Math.round(s.speed)} km/h. O limite sugerido neste trecho é ${SERRA_LIMIT} km/h (valor ilustrativo).`);
+  }
 }

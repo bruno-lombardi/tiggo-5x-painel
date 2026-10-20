@@ -6,6 +6,9 @@ import { RenderPass } from "three/addons/postprocessing/RenderPass.js";
 import { UnrealBloomPass } from "three/addons/postprocessing/UnrealBloomPass.js";
 import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 import { createEnvironment } from "./environment";
+import { applyBend, bendPoint, fitBend } from "./bend";
+import { laneX, roadAt } from "../engine/route";
+import type { WorldId } from "../engine/route";
 import { TRAFFIC_AT, TRAFFIC_REL_SPEED } from "../input/soundscape";
 import { makeCar, makeTruck, makeWalker } from "./models";
 import type { CarParts } from "./models";
@@ -96,7 +99,8 @@ interface LabelSpec {
   tone: "ok" | "info" | "warn" | "alert";
 }
 
-export function createWorld(host: HTMLElement, labelLayer: HTMLElement): World {
+export function createWorld(host: HTMLElement, labelLayer: HTMLElement, worldId: WorldId = "highway", carColor = 0xe9eef1): World {
+  const serraMode = worldId === "serra";
   const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false, powerPreference: "high-performance" });
   const dpr = Math.min(window.devicePixelRatio || 1, 2);
   renderer.setPixelRatio(dpr);
@@ -112,7 +116,7 @@ export function createWorld(host: HTMLElement, labelLayer: HTMLElement): World {
   const scene = new THREE.Scene();
   const camera = new THREE.PerspectiveCamera(46, (host.clientWidth || 640) / (host.clientHeight || 360), 0.3, 1500);
 
-  const env = createEnvironment(scene, renderer);
+  const env = createEnvironment(scene, renderer, worldId);
   const { laneLeftMat, laneRightMat } = env;
 
   /* Pós-processamento (só na qualidade Alta) */
@@ -153,7 +157,7 @@ export function createWorld(host: HTMLElement, labelLayer: HTMLElement): World {
   };
 
   /* Seu carro */
-  const own = makeCar(0xe9eef1);
+  const own = makeCar(carColor);
   const shadowize = (g: THREE.Object3D) => g.traverse((o) => { if ((o as THREE.Mesh).isMesh) { o.castShadow = true; } });
   shadowize(own.group);
   scene.add(own.group);
@@ -204,6 +208,15 @@ export function createWorld(host: HTMLElement, labelLayer: HTMLElement): World {
     scene.add(c.group);
   }
   let cum = 0;
+
+  /* Carros e caminhão do sentido oposto na Serra */
+  const oncPool = serraMode ? [makeCar(0x8a8f94), makeCar(0x2d4f7a), makeTruck(), makeCar(0x6a2d2d)] : [];
+  for (const c of oncPool) {
+    c.group.rotation.y = Math.PI;
+    c.group.visible = false;
+    shadowize(c.group);
+    scene.add(c.group);
+  }
 
   /* Farol: luz de verdade e leque visual */
   const spot = new THREE.SpotLight(0xfff2d0, 0, 90, 0.5, 0.6, 1.2);
@@ -290,6 +303,8 @@ export function createWorld(host: HTMLElement, labelLayer: HTMLElement): World {
     camMarkers.push(m);
   }
 
+  if (serraMode) applyBend(scene);
+
   /* Rótulos flutuantes */
   const labelEls = new Map<string, HTMLDivElement>();
   const tmp = new THREE.Vector3();
@@ -298,7 +313,9 @@ export function createWorld(host: HTMLElement, labelLayer: HTMLElement): World {
     const seen = new Set<string>();
     if (enabled) {
       for (const sp of specs) {
-        tmp.copy(sp.pos).project(camera);
+        tmp.copy(sp.pos);
+        if (serraMode) bendPoint(tmp);
+        tmp.project(camera);
         const visible = tmp.z > -1 && tmp.z < 1 && Math.abs(tmp.x) < 1.05 && Math.abs(tmp.y) < 1.05;
         if (!visible) continue;
         seen.add(sp.id);
@@ -367,13 +384,25 @@ export function createWorld(host: HTMLElement, labelLayer: HTMLElement): World {
 
     /* Dia e noite */
     nightK += ((s.night ? 1 : 0) - nightK) * (1 - Math.exp(-dt * 3));
-    env.update({ travel, nightK, ownX, dt, clock, still, speed: s.speed });
+    const routeS = s.route.s;
+    const road = roadAt(worldId, routeS);
+    if (serraMode) fitBend(worldId, routeS);
+    env.update({ travel, nightK, ownX, dt, clock, still, speed: s.speed, routeS, heading: road.heading });
 
     /* Seu carro e a saída de faixa */
     ownX += (s.lateral - ownX) * (1 - Math.exp(-dt * 12));
     ownYaw += ((s.speed > 1 ? -s.steer * 0.07 : 0) - ownYaw) * (1 - Math.exp(-dt * 6));
     own.group.position.x = ownX;
     own.group.rotation.y = ownYaw;
+    if (serraMode) {
+      // o carro se inclina: nariz para baixo ao frear, para cima ao acelerar, e rola para fora nas curvas
+      const v = s.speed / 3.6;
+      const pitchWant = THREE.MathUtils.clamp(s.ax * 0.006, -0.06, 0.04);
+      const rollWant = THREE.MathUtils.clamp(-road.kappa * v * v * 0.011 + s.slip * -0.004, -0.09, 0.09);
+      own.group.rotation.order = "YXZ";
+      own.group.rotation.x += (pitchWant - own.group.rotation.x) * (1 - Math.exp(-dt * 7));
+      own.group.rotation.z += (rollWant - own.group.rotation.z) * (1 - Math.exp(-dt * 6));
+    }
     for (const w of own.wheels) w.rotation.x = wheelSpin;
 
     const warnLdw = d.ldwWarn;
@@ -400,6 +429,7 @@ export function createWorld(host: HTMLElement, labelLayer: HTMLElement): World {
     spot.distance = d.highBeam ? 140 : 55;
     spot.position.x = ownX;
     spotTarget.position.set(ownX, 0, d.highBeam ? -80 : -32);
+    if (serraMode) bendPoint(spotTarget.position);
     lowBeamMat.opacity = lightsOn ? 0.2 : 0;
     highBeamMat.opacity = lightsOn && d.highBeam ? 0.26 : 0;
     lowBeam.position.x = ownX;
@@ -409,7 +439,7 @@ export function createWorld(host: HTMLElement, labelLayer: HTMLElement): World {
     const t = s.target;
     const labels: LabelSpec[] = [];
     const tgtZ = -(CAR_HALF_LEN + t.distance);
-    const tgtX = (t.lane ?? 0) * 3.5;
+    const tgtX = laneX(worldId, t.lane ?? 0);
     const isVeh = t.kind === "movingVehicle" || t.kind === "staticVehicle";
     const lead = t.kind === "movingVehicle" && t.variant === 1 ? leadTruck : leadCar;
     leadCar.group.visible = isVeh && lead === leadCar;
@@ -462,7 +492,7 @@ export function createWorld(host: HTMLElement, labelLayer: HTMLElement): World {
       });
     }
     if (s.collided) {
-      labels.push({ id: "crash", text: "Colisão simulada", pos: new THREE.Vector3(0, 3.1, -CAR_HALF_LEN - 1), tone: "alert" });
+      labels.push({ id: "crash", text: s.crashKind === "barrier" ? "Bateu na lateral da pista" : "Colisão simulada", pos: new THREE.Vector3(0, 3.1, -CAR_HALF_LEN - 1), tone: "alert" });
     }
 
     /* Ponto cego, ré e farol */
@@ -484,7 +514,7 @@ export function createWorld(host: HTMLElement, labelLayer: HTMLElement): World {
       for (const w of c.wheels) w.rotation.x = clock * 8;
       setCar(c, { tail: 0.7, head: 0.5 });
     }
-    oncomingCar.group.visible = s.oncoming;
+    oncomingCar.group.visible = s.oncoming && !serraMode;
     oncomingCar.group.position.set(-9.8, 0, -150 + ((clock * 26) % 190));
     setCar(oncomingCar, { head: 2, tail: 0 });
     for (const w of oncomingCar.wheels) w.rotation.x = clock * 10;
@@ -492,7 +522,23 @@ export function createWorld(host: HTMLElement, labelLayer: HTMLElement): World {
     /* Tráfego decorativo */
     cum += (mps * dir + TRAFFIC_REL_SPEED) * (still ? 0 : dt);
     deco.forEach((c) => (c.group.visible = false));
-    for (let k = 0; k < TRAFFIC_AT.length; k++) {
+    oncPool.forEach((c) => (c.group.visible = false));
+    if (serraMode) {
+      let used = 0;
+      s.oncomingList.forEach((o, k) => {
+        const c = oncPool[used];
+        if (!c) return;
+        const z = -(CAR_HALF_LEN + o.d) - 2.3;
+        if (z > 30 || z < -445) return;
+        used++;
+        c.group.visible = true;
+        c.group.position.set(laneX(worldId, -1), 0, z);
+        for (const w of c.wheels) w.rotation.x = clock * 14;
+        setCar(c, { head: nightK > 0.4 || s.night ? 2.2 : 0.4, tail: 0 });
+        labels.push({ id: `onc${k}`, text: `Carro vindo de frente · ${Math.max(0, Math.round(o.d))} m`, pos: new THREE.Vector3(laneX(worldId, -1), 2.6, z), tone: o.d < 60 ? "warn" : "info" });
+      });
+    }
+    for (let k = 0; k < (serraMode ? 0 : TRAFFIC_AT.length); k++) {
       const z = cum - TRAFFIC_AT[k];
       if (z < -320) break;
       if (z > 40) continue;

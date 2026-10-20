@@ -25,6 +25,15 @@ As regras (velocidades de ativação, condições, o que cancela o quê) foram l
 
 Todas as teclas também existem como botões na tela, para celular e tablet. Extra: **C** é a buzina (só teclado) e **F** liga ou desliga a **tela cheia** (também há o botão “Tela cheia”). Na tela cheia a estrada ocupa tudo, o painel do carro fica embaixo e o botão “Teclas” abre os controles na tela.
 
+## Menu principal, mundos e física
+
+Ao abrir, o **menu principal** deixa escolher a versão (**Pro**, com Max Drive 2.0, ou **Sport**, sem os assistentes no simulador), a cor (ilustrativa), o horário e o mundo:
+
+- **Rodovia infinita**: pista larga com tráfego automático, ideal para testar ACC, AEB, ponto cego e farol alto.
+- **Serra do Mirante**: trajeto inventado de 10 km em pista simples (uma faixa por sentido), com mais de 30 curvas, subidas e descidas, ponte, duas vilas e um mirante. Há carros vindo de frente, veículos lentos, carros parados e pedestres no acostamento. Placas de curva mostram a velocidade sugerida; bater na lateral ou de frente é uma colisão simulada e o carro volta ao meio da faixa. Ao chegar, aparece um resumo da condução.
+
+A física foi refeita: inércia dos pedais, freio motor, rastejar do câmbio automático, resistência de rampa, limite de aderência nas curvas (ESP atua e o carro pode escorregar para fora), ABS e inclinação da carroceria. Todos os valores são **ilustrativos**; só as velocidades de ativação dos assistentes vêm do manual. O código fica em `src/engine/` (regras puras, com testes) e `src/scene/serra.ts` + `src/scene/bend.ts` (cenário e "mundo curvo").
+
 **Som:** ao começar a dirigir, o som liga sozinho (botão “Som” e volume no topo). Tudo é sintetizado em tempo real, sem arquivos de áudio: motor, vento, pneus, pássaros de dia e grilos à noite, carros passando, partida, câmbio, setas, freio de estacionamento, portas, cintos, alertas dos assistentes, chiado de freada e ABS, faixa sonora na borda da pista, colisão e buzina. Os sons são ilustrativos.
 
 ## O que você pode fazer

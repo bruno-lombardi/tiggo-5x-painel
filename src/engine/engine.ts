@@ -1,3 +1,5 @@
+import { GEO, SERRA_LENGTH, SERRA_VILLAGE_END, SERRA_VILLAGE_START, laneX, roadAt } from "./route";
+import type { WorldId } from "./route";
 import type {
   AebStage,
   Action,
@@ -47,7 +49,7 @@ const GAP_SECONDS = [1.0, 1.6, 2.3] as const;
 
 export const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
 
-export function createInitialState(hasMaxDrive = true): SimState {
+export function createInitialState(hasMaxDrive = true, world: WorldId = "highway"): SimState {
   return {
     hasMaxDrive,
     ignitionOn: false,
@@ -98,6 +100,17 @@ export function createInitialState(hasMaxDrive = true): SimState {
     steer: 0,
     odo: 6673,
     trip: { km: 0, seconds: 0, liters: 0 },
+    world,
+    route: { s: 0, finished: false },
+    throttle: 0,
+    brakeP: 0,
+    ax: 0,
+    ay: 0,
+    slip: 0,
+    espActive: false,
+    crashKind: "none",
+    crashT: 0,
+    oncomingList: [],
   };
 }
 
@@ -143,11 +156,14 @@ function hysteresis(prev: Level, speed: number, on: number, off: number): Level 
 export const LANE_WIDTH = 3.5;
 const MAX_LATERAL = 3.9;
 
+/** Largura da faixa no mundo atual. */
+export const laneWidth = (s: SimState) => GEO[s.world].lane;
+
 /** O alvo está na trajetória do carro? (a menos de ~2 m do centro da sua faixa) */
 export function inPath(s: SimState): boolean {
   const t = s.target;
   if (t.kind === "none" || t.distance < -2) return false;
-  return Math.abs(s.lateral - (t.lane ?? 0) * LANE_WIDTH) < 2.0;
+  return Math.abs(s.lateral - laneX(s.world, t.lane ?? 0)) < 2.0;
 }
 
 /** Alvo que os sensores frontais consideram: só o que está na trajetória. */
@@ -499,7 +515,12 @@ export function reduce(s: SimState, a: Action): SimState {
         aeb: "idle",
       };
     case "variant":
-      return createInitialState(a.hasMaxDrive);
+      return createInitialState(a.hasMaxDrive, s.world);
+    case "newGame":
+    {
+      const g = createInitialState(a.hasMaxDrive, a.world);
+      return { ...g, night: a.night, route: { ...g.route, s: a.at ?? 0 } };
+    }
     case "load":
       return a.state;
     case "steer":
@@ -515,7 +536,7 @@ export function reduce(s: SimState, a: Action): SimState {
     case "tripReset":
       return { ...s, trip: { km: 0, seconds: 0, liters: 0 } };
     case "reset":
-      return createInitialState(s.hasMaxDrive);
+      return createInitialState(s.hasMaxDrive, s.world);
     default:
       return s;
   }
@@ -529,7 +550,8 @@ function tick(prev: SimState, dt: number): SimState {
   let s: SimState = { ...prev, clock: prev.clock + dt };
 
   if (!s.ignitionOn) {
-    return { ...s, speed: Math.max(0, s.speed - 4 * dt), accel: 0 };
+    const sp = Math.max(0, s.speed - 4 * dt);
+    return { ...s, speed: sp, accel: 0, throttle: 0, brakeP: 0, route: { ...s.route, s: s.route.s + (sp / 3.6) * dt } };
   }
 
   const operational = adasOperational(s);
@@ -577,23 +599,81 @@ function tick(prev: SimState, dt: number): SimState {
   if (s.limit.mode !== "off" && !operational) s = { ...s, limit: { ...s.limit, mode: "off" } };
 
   // AEB
-  const aeb = assessAeb(s);
+  let aeb = assessAeb(s);
+  // Depois que o AEB começa a frear, ele segue até parar (ou até o motorista assumir).
+  const wasActing = prev.aeb === "partial" || prev.aeb === "emergency";
+  if (wasActing && aeb.stage !== "partial" && aeb.stage !== "emergency") {
+    const driverTook = s.brake || aeb.cancelledByDriver || s.accel > 0;
+    if (!driverTook && pathTarget(s).kind !== "none" && s.speed > 0.5 && adasOperational(s)) aeb = { ...aeb, stage: prev.aeb };
+  }
   s.aeb = aeb.stage;
   if (aeb.stage === "partial" || aeb.stage === "emergency") s = suspendAcc(s);
 
-  // Aceleração (km/h por segundo) — modelo ILUSTRATIVO.
+  /* ---------------- Física (valores ILUSTRATIVOS) ---------------- */
+  const geo = GEO[s.world];
+  const road = roadAt(s.world, s.route.s);
+  const v0 = s.speed / 3.6;
   const driveable = s.gear === "D" || s.gear === "R";
-  let accelRate = -1.5;
-  if (aeb.stage === "emergency") accelRate = -90;
-  else if (aeb.stage === "partial") accelRate = -35;
-  else if (s.brake) accelRate = -15;
-  else if (s.accel > 0 && driveable) accelRate = s.accel === 2 ? 14 : 8;
-  else if (s.acc.mode === "active") accelRate = accControl(s);
-  else if (!driveable) accelRate = -3;
+  const aebStage = aeb.stage;
 
-  let speed = clamp(s.speed + accelRate * dt, 0, s.gear === "R" ? 15 : 200);
+  // Pedais com inércia: o pé não vai de 0 a 100% instantaneamente.
+  const driverThrottle = s.accel === 2 ? 1 : s.accel === 1 ? 0.5 : 0;
+  const approach = (cur: number, target: number, rate: number) =>
+    cur < target ? Math.min(target, cur + rate * dt) : Math.max(target, cur - rate * dt);
+  const throttle = approach(s.throttle, driveable ? driverThrottle : s.accel > 0 ? 0.25 : 0, driverThrottle > s.throttle ? 3.2 : 7);
+  const brakeTarget = aebStage === "emergency" ? 1 : aebStage === "partial" ? 0.55 : s.brake ? 1 : 0;
+  const brakeP = approach(s.brakeP, brakeTarget, brakeTarget > s.brakeP ? (aebStage === "emergency" ? 14 : 6) : 9);
+
+  // Forças longitudinais.
+  const driving = driveable && s.gear === "D" ? 1 : 0.7;
+  const fAvail = Math.min(PH.fMax * driving, (PH.power * driving) / Math.max(v0, 3));
+  const resistance = 0.5 * PH.rho * PH.cdA * v0 * v0 + PH.crr * PH.mass * PH.g;
+  const slope = s.gear === "R" ? 0 : road.grade * PH.mass * PH.g;
+  let a = 0;
+  let driverOn = throttle > 0.02;
+  if (driverOn && driveable) {
+    a = (throttle * fAvail - resistance - slope) / PH.mass;
+  } else if (!s.brake && s.acc.mode === "active" && aebStage === "idle" && driveable) {
+    // O ACC pede uma aceleração; o motor entrega só o que a potência e a ladeira permitem.
+    const want = accControl(s) / 3.6;
+    const avail = (fAvail - resistance - slope) / PH.mass;
+    a = Math.min(want, avail);
+    if (want < 0) a = want;
+    driverOn = true;
+  } else {
+    // Sem acelerador: resistência, freio-motor e (em D) o "arrasto" de marcha lenta do câmbio.
+    const eb = driveable && v0 > 1 ? 0.5 * smoothstep(1, 6, v0) : 0;
+    a = -(resistance * (v0 > 0.05 ? 1 : 0)) / PH.mass - eb - slope / PH.mass;
+    if (s.gear === "D" && !s.parkingBrake && brakeP < 0.05 && v0 < 1.8) a += 1.0 * (1 - v0 / 1.8) - (v0 < 0.05 ? 0 : 0);
+    if (s.gear === "R" && !s.parkingBrake && brakeP < 0.05 && v0 < 1.2) a += 0.9 * (1 - v0 / 1.2);
+    if (s.gear === "P") a = -3;
+  }
+  // Freios (o limite é a aderência do pneu; o ABS segura o carro na borda dela).
+  const gripNow = PH.brakeMax * (s.world === "serra" && s.night ? 0.96 : 1);
+  a -= brakeP * gripNow;
+  if (s.parkingBrake && s.speed > 1) a -= 2.8;
+  // HDC: segura o carro em descidas fortes (Hill Descent Control).
+  if (s.hdc && road.grade < -0.03 && !driverOn && brakeP < 0.05 && v0 > 2.6) a -= Math.min(3, (v0 - 2.6) * 1.6);
+
+  // Curva: aceleração lateral necessária e o limite de aderência (círculo de atrito).
+  const kappa = road.kappa;
+  const ayReq = v0 * v0 * kappa; // + = curva à esquerda
+  const aLimit = Math.sqrt(Math.max(0.6, PH.latLimit * PH.latLimit - (a * 0.85) * (a * 0.85)));
+  const excess = Math.max(0, Math.abs(ayReq) - aLimit);
+  let espActive = false;
+  if (s.esp && s.ignitionOn && Math.abs(ayReq) > aLimit * 0.82 && s.speed > 25) {
+    espActive = true;
+    a -= Math.min(3.2, (Math.abs(ayReq) - aLimit * 0.8) * 0.9 + 0.6);
+  }
+
+  let speed = clamp((v0 + a * dt) * 3.6, 0, s.gear === "R" ? 15 : 200);
   if (s.limit.mode === "active" && s.accel < 2 && speed > s.limit.value) speed = Math.max(s.limit.value, s.speed - 6 * dt);
   if (s.parkingBrake && s.speed <= 1 && s.accel === 0) speed = 0;
+  const ax = (speed - s.speed) / 3.6 / Math.max(dt, 1e-3);
+
+  // Escorregada para fora da curva quando o limite é ultrapassado.
+  const slip = Math.max(0, s.slip + (excess * 1.1 - s.slip * 0.9) * dt);
+  const outward = Math.sign(kappa);
 
   // Alvo à frente.
   const t = s.target;
@@ -602,43 +682,127 @@ function tick(prev: SimState, dt: number): SimState {
   if (t.kind === "movingVehicle") distance += ((t.speed - speed) / 3.6) * dt;
   else if (t.kind === "staticVehicle" || t.kind === "pedestrian") distance -= (speed / 3.6) * dt;
   let collided = s.collided;
+  let crashKind = s.crashKind;
+  let crashT = s.crashT;
   if (inLane && distance <= 0.5 && closingSpeedMs({ ...s, speed }) > 0) {
     collided = true;
+    crashKind = s.world === "serra" ? "traffic" : crashKind;
+    crashT = s.world === "serra" ? 4 : crashT;
     speed = 0;
     distance = 0.5;
   }
   if (t.kind !== "none") distance = clamp(distance, inLane ? 0.5 : -80, 400);
 
-  // Posição lateral: o volante só faz efeito com o carro em movimento.
-  const lateralRate = clamp(speed / 25, 0, 1) * 2.4;
-  const lateral = clamp(s.lateral + s.steer * lateralRate * dt, -MAX_LATERAL, MAX_LATERAL);
-  const offset = lateral - Math.round(lateral / LANE_WIDTH) * LANE_WIDTH;
-  const laneDeparture = Math.abs(offset) > 0.85;
+  // Posição lateral: o volante só faz efeito com o carro em movimento e perde agilidade com a velocidade.
+  const lateralRate = (clamp(speed / 25, 0, 1) * 2.6) / (1 + (speed / 100) ** 2);
+  let lateral = s.lateral + s.steer * lateralRate * dt + outward * slip * dt;
+  if (s.world === "highway") lateral = clamp(lateral, -MAX_LATERAL, MAX_LATERAL);
+  else lateral = clamp(lateral, geo.crashLeft - 0.6, geo.crashRight + 0.6);
+  const offset = lateral - Math.round(lateral / geo.lane) * geo.lane;
+  const laneDeparture = Math.abs(offset) > geo.departAt;
+
+  // Carros do sentido oposto (Serra) e batidas na lateral da pista.
+  let oncomingList = s.oncomingList;
+  if (s.world === "serra") {
+    const mv = speed / 3.6;
+    oncomingList = [];
+    for (const o of s.oncomingList) {
+      const d = o.d - (mv + o.v / 3.6) * dt;
+      if (d < -70) continue;
+      oncomingList.push({ ...o, d });
+      const swept = o.d > 0 && d <= 0;
+      if (!collided && (swept || (d <= 0 && d > -4.6)) && Math.abs(lateral - laneX("serra", -1)) < 1.75) {
+        collided = true;
+        crashKind = "traffic";
+        crashT = 4.5;
+        speed = 0;
+      }
+    }
+    if (!collided && (lateral > geo.crashRight || lateral < geo.crashLeft) && speed > 3) {
+      collided = true;
+      crashKind = "barrier";
+      crashT = 4;
+      speed = 0;
+    }
+  }
+  let target = { ...t, distance };
+  let nextLateral = lateral;
+  let nextAeb = aeb.stage;
+  if (s.world === "serra" && collided && crashKind !== "none") {
+    speed = 0;
+    crashT = crashT - dt;
+    if (crashT <= 0) {
+      // Recomeça no meio da faixa, com a pista livre.
+      collided = false;
+      crashKind = "none";
+      nextLateral = 0;
+      oncomingList = [];
+      target = { kind: "none", distance: 80, speed: 40 };
+      nextAeb = "idle";
+    }
+  }
 
   // "aebStopped" fica ligado depois que o AEB freou, até o motorista agir.
   const aebActing = aeb.stage === "partial" || aeb.stage === "emergency";
   const aebStopped = aebActing || (s.aebStopped && !s.brake && s.accel === 0);
 
-  // Viagem (consumo ILUSTRATIVO: litros por hora crescem com a velocidade e com o acelerador).
+  // Percurso e viagem (consumo ILUSTRATIVO: litros por hora crescem com a velocidade e com o acelerador).
   const km = (speed / 3600) * dt;
-  const litersPerHour = (0.9 + speed * 0.055) * (s.accel > 0 ? 1.4 : 1);
+  const dir = s.gear === "R" ? -1 : 1;
+  const sNext = clamp(s.route.s + (speed / 3.6) * dt * dir, 0, s.world === "serra" ? SERRA_LENGTH : Infinity);
+  const litersPerHour = (0.9 + speed * 0.055) * (throttle > 0.02 ? 1.4 : 1);
   const trip = {
     km: s.trip.km + km,
     seconds: s.trip.seconds + dt,
     liters: s.trip.liters + (litersPerHour * dt) / 3600,
   };
+  const finished = s.route.finished || (s.world === "serra" && sNext >= SERRA_LENGTH - 60);
+  // As vilas da Serra têm iluminação pública.
+  const roadLit = s.world === "serra" ? sNext < SERRA_VILLAGE_START + 40 || sNext > SERRA_VILLAGE_END - 40 : s.roadLit;
+  const oncoming = s.world === "serra" ? oncomingList.some((o) => o.d > 0 && o.d < 140) && s.night : s.oncoming;
 
   return {
     ...s,
     speed,
-    target: { ...t, distance },
-    lateral,
+    aeb: nextAeb,
+    target,
+    lateral: nextLateral,
     laneDeparture,
     collided,
     aebStopped,
     odo: s.odo + km,
     trip,
+    throttle,
+    brakeP,
+    ax: Number.isFinite(ax) ? ax : 0,
+    ay: ayReq,
+    slip: collided ? 0 : slip,
+    espActive,
+    absActive: brakeP > 0.85 && speed > 8 && !collided,
+    crashKind,
+    crashT,
+    oncomingList,
+    route: { s: sNext, finished },
+    roadLit,
+    oncoming,
   };
+}
+
+const PH = {
+  mass: 1560, // carro + motorista (kg)
+  power: 92000, // potência efetiva nas rodas (W)
+  fMax: 3700, // força máxima de tração (N)
+  cdA: 0.72, // coeficiente de arrasto x área frontal (m²)
+  crr: 0.012,
+  rho: 1.2,
+  g: 9.81,
+  brakeMax: 9.2, // m/s² no limite da aderência, pista seca
+  latLimit: 6.6, // aceleração lateral máxima antes de o carro "abrir" a curva
+} as const;
+
+function smoothstep(a: number, b: number, x: number) {
+  const k = clamp((x - a) / (b - a), 0, 1);
+  return k * k * (3 - 2 * k);
 }
 
 function accControl(s: SimState): number {

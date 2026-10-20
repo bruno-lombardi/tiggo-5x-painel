@@ -4,6 +4,7 @@ import { Cluster } from "./components/Cluster";
 import type { ClusterPage } from "./components/Cluster";
 import { ConsolePanel, StalkPanel, WheelPanel } from "./components/Controls";
 import { DriveView, MissionMenu } from "./components/Drive";
+import { MainMenu } from "./components/MainMenu";
 import { Coach, Feed, NowStep, ScenarioBar } from "./components/Guide";
 import { AccChecklist, Explainer } from "./components/Inspector";
 import { SCENARIOS } from "./content/scenarios";
@@ -12,6 +13,8 @@ import type { DirState } from "./engine/director";
 import { createInitialState, evaluate, reduce } from "./engine/engine";
 import { createSoundscape } from "./input/soundscape";
 import { useController } from "./input/useController";
+import { colorHex, loadSetup, saveSetup } from "./setup";
+import type { Setup } from "./setup";
 import { useMission } from "./useMission";
 import { useStats } from "./useStats";
 
@@ -22,6 +25,8 @@ type Mode = "drive" | "lab";
 export function App() {
   const [state, dispatch] = useReducer(reduce, undefined, () => createInitialState(true));
   const [mode, setMode] = useState<Mode>("drive");
+  const [screen, setScreen] = useState<"menu" | "play">("menu");
+  const [setup, setSetup] = useState<Setup>(loadSetup);
   const [selected, setSelected] = useState("acc");
   const [page, setPage] = useState<ClusterPage>("adas");
   const [started, setStarted] = useState(false);
@@ -29,6 +34,7 @@ export function App() {
   const select = useCallback((id: string) => setSelected(id), []);
 
   const derived = useMemo(() => evaluate(state), [state]);
+  const setupRef = useRef(setup);
   const stateRef = useRef(state);
   const derivedRef = useRef(derived);
   stateRef.current = state;
@@ -52,7 +58,7 @@ export function App() {
 
   /* Trânsito automático na estrada livre */
   const dirRef = useRef<DirState | null>(null);
-  const freeRoad = mode === "drive" && !mission.scenario && started;
+  const freeRoad = mode === "drive" && screen === "play" && !mission.scenario && started;
   useEffect(() => {
     if (!freeRoad) {
       dirRef.current = null;
@@ -105,35 +111,88 @@ export function App() {
     if (sc && mission.picked !== null) beeper.current?.ui(mission.picked === sc.quiz.answer ? "ok" : "fail");
   }, [mission.picked, mission.scenario]);
 
-  const begin = useCallback(() => {
+  const newGame = useCallback((cfg: Setup) => {
+    // "?s=3000" começa o trajeto da Serra já nesse ponto (útil para testar trechos)
+    const at = Number(new URLSearchParams(location.search).get("s")) || 0;
+    dispatch({ type: "newGame", hasMaxDrive: cfg.model === "pro", world: cfg.world, night: cfg.night, at: cfg.world === "serra" ? at : 0 });
+  }, []);
+
+  const begin = useCallback((cfg?: Setup) => {
     if (!userMuted.current && !beeper.current?.isEnabled()) {
       beeper.current?.setEnabled(true);
       setSound(true);
     }
-    dispatch({ type: "reset" });
+    newGame(cfg ?? setupRef.current);
     dispatch({ type: "ignition" });
     dispatch({ type: "gear", gear: "D" });
     dispatch({ type: "set", key: "parkingBrake", value: false });
     dispatch({ type: "tripReset" });
+    stats.reset();
     setStarted(true);
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [newGame]);
 
   const startMission = useCallback(
     (id: string | null) => {
       mission.start(id);
       setPage("adas");
-      if (id === null) setStarted(false);
-      else setStarted(true);
+      if (id === null) {
+        newGame(setupRef.current);
+        setStarted(false);
+      } else setStarted(true);
       stats.reset();
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [mission.start],
+    [mission.start, newGame],
   );
+
+  /* Menu principal */
+  const goPlay = (cfg: Setup, missionId: string | null) => {
+    setSetup(cfg);
+    setupRef.current = cfg;
+    saveSetup(cfg);
+    setMode("drive");
+    setScreen("play");
+    if (missionId) startMission(missionId);
+    else {
+      mission.start(null);
+      begin(cfg);
+    }
+  };
+  const goMenu = () => {
+    mission.start(null);
+    newGame(setupRef.current);
+    setStarted(false);
+    setScreen("menu");
+  };
 
   const nextMission = () => {
     const idx = SCENARIOS.findIndex((s) => s.id === mission.scenarioId);
     startMission(SCENARIOS[(idx + 1) % SCENARIOS.length].id);
   };
+
+  if (screen === "menu") {
+    return (
+      <div className="app app-menu">
+        <MainMenu
+          initial={setup}
+          onStart={(cfg) => goPlay(cfg, null)}
+          onMission={(cfg) => goPlay(cfg, "basics")}
+          onLab={() => {
+            setMode("lab");
+            setScreen("play");
+          }}
+        />
+        <footer className="legal">
+          <p>
+            Projeto independente, sem vínculo com a CAOA Chery nem com a Chery. Textos em palavras próprias; desenhos, sons e mundos
+            são originais. A Serra do Mirante é um trajeto inventado. Velocidades de ativação dos assistentes vêm do manual; a física,
+            o trânsito e o restante são ilustrativos.
+          </p>
+        </footer>
+      </div>
+    );
+  }
 
   return (
     <div className={`app app-${mode}`}>
@@ -147,6 +206,9 @@ export function App() {
           </p>
         </div>
         <div className="top-right">
+          <button type="button" className="chip" onClick={goMenu}>
+            Menu principal
+          </button>
           {mode === "drive" ? (
             <>
               <MissionMenu scenarioId={mission.scenarioId} onPick={startMission} />
@@ -197,7 +259,9 @@ export function App() {
           startMission={startMission}
           nextMission={nextMission}
           started={started}
-          begin={begin}
+          begin={() => begin()}
+          onMenu={goMenu}
+          carColor={colorHex(setup.color)}
           stats={stats}
         />
       ) : (
@@ -218,7 +282,7 @@ export function App() {
                 <NowStep scenario={mission.scenario} progress={mission.progress} />
               </div>
               <Suspense fallback={<section className="panel scene scene-loading">Carregando a cena 3D…</section>}>
-                <Scene3D state={state} derived={derived} />
+                <Scene3D state={state} derived={derived} carColor={colorHex(setup.color)} />
               </Suspense>
               <div className="controls">
                 <WheelPanel state={state} dispatch={dispatch} select={select} page={page} setPage={setPage} />
