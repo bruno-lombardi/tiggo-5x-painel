@@ -226,17 +226,35 @@ export function createSerra(scene: THREE.Scene, deps: SerraDeps): SerraEnv {
   root.add(terrain);
   let tBase = Number.NaN;
 
+  const hCache = new Float32Array(TR * TC);
+  const pCache = new Float32Array(TR * TC);
   function rebuildTerrain(b: number) {
+    // ao andar, as linhas já calculadas apenas "sobem" na tabela; só as novas são calculadas
+    const delta = Number.isNaN(tBase) ? TR : b - tBase;
+    let first = 0;
+    if (delta > 0 && delta < TR) {
+      hCache.copyWithin(0, delta * TC);
+      pCache.copyWithin(0, delta * TC);
+      first = TR - delta;
+    } else if (delta !== 0) first = 0;
+    else first = TR;
+    for (let r = first; r < TR; r++) {
+      const S = (b + r) * TROW;
+      for (let c = 0; c < TC; c++) {
+        const k = r * TC + c;
+        hCache[k] = terrainRel(xs[c], S);
+        pCache[k] = fbm(xs[c] * 0.03 + 40, S * 0.03);
+      }
+    }
     for (let r = 0; r < TR; r++) {
       const S = (b + r) * TROW;
       const z = -r * TROW;
       for (let c = 0; c < TC; c++) {
         const k = r * TC + c;
-        const x = xs[c];
-        tPos[k * 3] = x;
-        tPos[k * 3 + 1] = terrainRel(x, S);
+        tPos[k * 3] = xs[c];
+        tPos[k * 3 + 1] = hCache[k];
         tPos[k * 3 + 2] = z;
-        tUv[k * 2] = x / 18;
+        tUv[k * 2] = xs[c] / 18;
         tUv[k * 2 + 1] = S / 18;
       }
     }
@@ -252,7 +270,7 @@ export function createSerra(scene: THREE.Scene, deps: SerraDeps): SerraEnv {
         const x = xs[c];
         const h = tPos[k * 3 + 1];
         const ny = nor.getY(k);
-        const patch = fbm(x * 0.03 + 40, S * 0.03);
+        const patch = pCache[k];
         const rock = smooth(0.84, 0.6, ny); // encosta íngreme → rocha
         const dirt = x < X_CUT && x > -13 ? 0.55 * (1 - v) : 0;
         col.setHSL(0.26 + patch * 0.05 - Math.max(0, h) * 0.0006, 0.42 - Math.max(0, h) * 0.003, 0.46 + (patch - 0.5) * 0.14 - Math.max(0, h) * 0.0012);

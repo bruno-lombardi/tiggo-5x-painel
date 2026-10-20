@@ -342,6 +342,8 @@ export function createWorld(host: HTMLElement, labelLayer: HTMLElement, worldId:
 
   /* Estado interno da animação */
   let travel = 0;
+  let lastSimClock = -1;
+  let sinceTick = 0;
   let clock = 0;
   let nightK = 0;
   let ownX = 0;
@@ -379,12 +381,18 @@ export function createWorld(host: HTMLElement, labelLayer: HTMLElement, worldId:
 
     const dir = s.gear === "R" ? -1 : 1;
     const mps = s.speed / 3.6;
+    // A simulação avança a 10 Hz; entre dois passos o desenho extrapola o movimento para ficar fluido.
+    if (s.clock !== lastSimClock) {
+      lastSimClock = s.clock;
+      sinceTick = 0;
+    }
+    sinceTick = still ? 0 : Math.min(sinceTick + dt, 0.12);
     if (!still) travel += mps * dt * dir;
     wheelSpin += (mps * dt * dir) / 0.36;
 
     /* Dia e noite */
     nightK += ((s.night ? 1 : 0) - nightK) * (1 - Math.exp(-dt * 3));
-    const routeS = s.route.s;
+    const routeS = s.route.s + mps * dir * sinceTick;
     const road = roadAt(worldId, routeS);
     if (serraMode) fitBend(worldId, routeS);
     env.update({ travel, nightK, ownX, dt, clock, still, speed: s.speed, routeS, heading: road.heading });
@@ -438,7 +446,9 @@ export function createWorld(host: HTMLElement, labelLayer: HTMLElement, worldId:
     /* Alvo à frente */
     const t = s.target;
     const labels: LabelSpec[] = [];
-    const tgtZ = -(CAR_HALF_LEN + t.distance);
+    const relMps = t.kind === "movingVehicle" ? mps - t.speed / 3.6 : mps;
+    const tgtDist = Math.max(0.3, t.distance - relMps * dir * sinceTick);
+    const tgtZ = -(CAR_HALF_LEN + tgtDist);
     const tgtX = laneX(worldId, t.lane ?? 0);
     const isVeh = t.kind === "movingVehicle" || t.kind === "staticVehicle";
     const lead = t.kind === "movingVehicle" && t.variant === 1 ? leadTruck : leadCar;
@@ -528,7 +538,7 @@ export function createWorld(host: HTMLElement, labelLayer: HTMLElement, worldId:
       s.oncomingList.forEach((o, k) => {
         const c = oncPool[used];
         if (!c) return;
-        const z = -(CAR_HALF_LEN + o.d) - 2.3;
+        const z = -(CAR_HALF_LEN + o.d - (mps + o.v / 3.6) * sinceTick) - 2.3;
         if (z > 30 || z < -445) return;
         used++;
         c.group.visible = true;
